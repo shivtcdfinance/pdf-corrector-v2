@@ -406,165 +406,43 @@ footer a { color: var(--accent); text-decoration: none; }
 
 <script>
 // ─── State ───
-let images = []; // { id, file, dataUrl, width, height, orientation }
+let images = []; // { id, file, dataUrl, width, height }
 let idCounter = 0;
 
-// ─── EXIF Orientation ───
-// Parses the EXIF Orientation tag (0x0112) from a JPEG file's APP1 segment.
-// Returns 1 (normal) for non-JPEG files or when no EXIF is found.
-function parseEXIF(file) {
-  return new Promise((resolve) => {
-    // Only parse JPEG files — PNG/WebP/HEIC don't have EXIF orientation
-    if (!file.type || !file.type.match(/jpeg/i)) {
-      resolve(1);
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      try {
-        const view = new DataView(e.target.result);
-        // Must start with SOI marker 0xFFD8
-        if (view.getUint16(0, false) !== 0xFFD8) {
-          resolve(1);
-          return;
-        }
-        let offset = 2;
-        while (offset < view.byteLength) {
-          const marker = view.getUint16(offset, false);
-          offset += 2;
-          if (marker === 0xFFE1) {
-            // APP1 segment — EXIF data
-            const segLen = view.getUint16(offset, false);
-            offset += 2;
-            // Verify "Exif\0\0" header
-            if (view.getUint32(offset, false) !== 0x45786966 ||
-                view.getUint16(offset + 4, false) !== 0x0000) {
-              resolve(1);
-              return;
-            }
-            offset += 6;
-            // TIFF header: byte order
-            const littleEndian = view.getUint16(offset, false) === 0x4949;
-            offset += 2;
-            // TIFF magic 0x002A
-            if (view.getUint16(offset, littleEndian) !== 0x002A) {
-              resolve(1);
-              return;
-            }
-            offset += 2;
-            // Offset to IFD0 (relative to TIFF header start)
-            const ifd0Offset = view.getUint32(offset, littleEndian);
-            const ifd0 = offset + ifd0Offset;
-            if (ifd0 + 2 > view.byteLength) {
-              resolve(1);
-              return;
-            }
-            const entryCount = view.getUint16(ifd0, littleEndian);
-            for (let i = 0; i < entryCount; i++) {
-              const entry = ifd0 + 2 + i * 12;
-              if (entry + 12 > view.byteLength) break;
-              const tag = view.getUint16(entry, littleEndian);
-              if (tag === 0x0112) {
-                // Orientation tag — value is at entry + 8 (2 bytes for short type)
-                const orientation = view.getUint16(entry + 8, littleEndian);
-                resolve(orientation >= 1 && orientation <= 8 ? orientation : 1);
-                return;
-              }
-            }
-            resolve(1);
-            return;
-          } else if ((marker >= 0xFFD0 && marker <= 0xFFD9) || marker === 0xFF01) {
-            // No-length markers: SOS, EOI, RSTn, TEM
-            continue;
-          } else {
-            // Skip other segments
-            if (offset + 2 > view.byteLength) { resolve(1); return; }
-            const segLength = view.getUint16(offset, false);
-            offset += segLength;
-          }
-        }
-        resolve(1);
-      } catch (e) {
-        resolve(1);
-      }
-    };
-    reader.onerror = () => resolve(1);
-    // Read first 64KB — EXIF header is always in the first segment
-    reader.readAsArrayBuffer(file.slice(0, 65536));
-  });
-}
-
-// ─── Correct Orientation via Canvas ───
-// Draws the image onto an offscreen canvas with the EXIF correction baked in.
-// Returns a data URL of the correctly-oriented pixel data.
-function correctOrientation(dataUrl, orientation) {
-  return new Promise((resolve) => {
-    if (orientation === 1) {
-      resolve(dataUrl);
-      return;
-    }
-    const img = new Image();
-    img.onload = function() {
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-      // Orientations 5-8 swap width and height
-      const canvasW = (orientation >= 5 && orientation <= 8) ? h : w;
-      const canvasH = (orientation >= 5 && orientation <= 8) ? w : h;
-      const canvas = document.createElement('canvas');
-      canvas.width = canvasW;
-      canvas.height = canvasH;
-      const ctx = canvas.getContext('2d');
-      switch (orientation) {
-        case 2: // Mirror horizontal
-          ctx.translate(canvasW, 0);
-          ctx.scale(-1, 1);
-          ctx.drawImage(img, 0, 0);
-          break;
-        case 3: // Rotate 180°
-          ctx.translate(canvasW, canvasH);
-          ctx.rotate(Math.PI);
-          ctx.drawImage(img, 0, 0);
-          break;
-        case 4: // Mirror vertical
-          ctx.translate(0, canvasH);
-          ctx.scale(1, -1);
-          ctx.drawImage(img, 0, 0);
-          break;
-        case 5: // Mirror + 90° CW
-          ctx.translate(canvasW, 0);
-          ctx.rotate(Math.PI / 2);
-          ctx.scale(1, -1);
-          ctx.drawImage(img, 0, 0);
-          break;
-        case 6: // 90° CW (most common for portrait iPhone photos)
-          ctx.translate(canvasW, 0);
-          ctx.rotate(Math.PI / 2);
-          ctx.drawImage(img, 0, 0);
-          break;
-        case 7: // Mirror + 90° CCW
-          ctx.translate(0, canvasH);
-          ctx.rotate(-Math.PI / 2);
-          ctx.scale(1, -1);
-          ctx.drawImage(img, 0, 0);
-          break;
-        case 8: // 90° CCW
-          ctx.translate(0, canvasH);
-          ctx.rotate(-Math.PI / 2);
-          ctx.drawImage(img, 0, 0);
-          break;
-        default: // 1 — normal, shouldn't reach here
-          ctx.drawImage(img, 0, 0);
-      }
-      canvas.toBlob(function(blob) {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => resolve(dataUrl); // fallback to original
-        reader.readAsDataURL(blob);
-      }, 'image/jpeg', 0.95);
-    };
-    img.onerror = () => resolve(dataUrl);
-    img.src = dataUrl;
-  });
+// ─── Correct Orientation ───
+// Uses the browser's built-in EXIF handling via createImageBitmap()
+// to bake correct orientation into pixel data. Works for ALL formats:
+// JPEG, HEIC/HEIF (iPhone), PNG, WebP — no custom EXIF parser needed.
+// Falls back to direct data URL on unsupported browsers.
+async function getOrientedImage(file) {
+  try {
+    // createImageBitmap with 'from-image' applies EXIF orientation
+    // Supported in Chrome 59+, Firefox 74+, Safari 15+, Edge 79+
+    const opts = { imageOrientation: 'from-image', premultiplyAlpha: 'none' };
+    const bitmap = await createImageBitmap(file, opts);
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    // Determine best output format based on original file type
+    const mime = file.type === 'image/png' ? 'image/png' :
+                 file.type === 'image/webp' ? 'image/webp' : 'image/jpeg';
+    const quality = mime === 'image/jpeg' ? 0.95 : undefined;
+    const blob = await new Promise(r => canvas.toBlob(r, mime, quality));
+    const dataUrl = await new Promise(r => {
+      const fr = new FileReader();
+      fr.onload = () => r(fr.result);
+      fr.readAsDataURL(blob);
+    });
+    return { dataUrl, width: canvas.width, height: canvas.height };
+  } catch (e) {
+    // Fallback for older browsers — load as-is (no EXIF correction)
+    const dataUrl = await readFileAsDataURL(file);
+    const dims = await getImageDimensions(dataUrl);
+    return { dataUrl, width: dims.width, height: dims.height };
+  }
 }
 
 // ─── DOM refs ───
@@ -660,16 +538,13 @@ async function addFiles(files) {
   for (let i = 0; i < imageFiles.length; i++) {
     const file = imageFiles[i];
     try {
-      const orientation = await parseEXIF(file);
-      const dataUrl = await readFileAsDataURL(file);
-      const dims = await getImageDimensions(dataUrl, orientation);
+      const corrected = await getOrientedImage(file);
       images.push({
         id: idCounter++,
         file,
-        dataUrl,
-        width: dims.width,
-        height: dims.height,
-        orientation
+        dataUrl: corrected.dataUrl,
+        width: corrected.width,
+        height: corrected.height
       });
       progressCurrent.textContent = i + 1;
       progressBar.style.width = ((i + 1) / imageFiles.length * 100) + '%';
@@ -846,14 +721,11 @@ async function generatePDF() {
     progressBar.style.width = ((i + 1) / total * 100) + '%';
 
     try {
-      // Bake EXIF orientation into the pixel data if needed
-      const correctedUrl = await correctOrientation(img.dataUrl, img.orientation);
-
       // Calculate dimensions to fit on page
       const { width: imgW, height: imgH } = img;
       if (imgW === 0 || imgH === 0) {
         // Unknown dimensions — fit to full usable area
-        doc.addImage(correctedUrl, 'JPEG', margin, margin, usableW, usableH);
+        doc.addImage(img.dataUrl, 'JPEG', margin, margin, usableW, usableH);
         continue;
       }
 
@@ -886,12 +758,12 @@ async function generatePDF() {
         y = (page.h - drawH) / 2;
       }
 
-      // Determine format from corrected data URL
+      // Determine format from data URL
       let format = 'JPEG';
-      if (correctedUrl.startsWith('data:image/png')) format = 'PNG';
-      else if (correctedUrl.startsWith('data:image/webp')) format = 'WEBP';
+      if (img.dataUrl.startsWith('data:image/png')) format = 'PNG';
+      else if (img.dataUrl.startsWith('data:image/webp')) format = 'WEBP';
 
-      doc.addImage(correctedUrl, format, x, y, drawW, drawH);
+      doc.addImage(img.dataUrl, format, x, y, drawW, drawH);
 
     } catch (err) {
       console.error(`Failed to add image ${i + 1}:`, err);
