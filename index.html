@@ -86,20 +86,28 @@ header p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 
 /* Thumbnail grid */
 .thumb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 10px; margin: 16px 0;
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0;
 }
-.thumb-card {
+.thumb-card { 
   position: relative; border-radius: 8px; overflow: hidden;
-  aspect-ratio: 3/4; background: var(--surface);
-  border: 3px solid var(--border); cursor: pointer; transition: all 0.15s;
+  width: 130px; aspect-ratio: 3/4; background: var(--surface);
+  border: 3px solid var(--border); cursor: grab; transition: all 0.15s;
+  touch-action: manipulation;
 }
+.thumb-card:active { cursor: grabbing; }
 .thumb-card:hover { border-color: var(--accent); }
 .thumb-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(88,166,255,0.4); }
 .thumb-card.marked { border-color: var(--danger); }
 .thumb-card.marked.selected { border-color: var(--warning); }
 .thumb-card.replaced { border-color: var(--success); }
+.thumb-card.dragging { opacity: 0.4; transform: scale(0.95); cursor: grabbing; }
+.thumb-card.drag-over { border-color: var(--accent); transform: scale(1.05); background: rgba(88,166,255,0.08); }
+/* Drop zone between cards */
+.drop-zone-between {
+  width: 100%; height: 10px; border-radius: 6px;
+  transition: background 0.15s, height 0.15s; flex-basis: 100%;
+}
+.drop-zone-between.drag-over { background: var(--accent); height: 20px; }
 .thumb-card canvas { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .thumb-card .page-num {
   position: absolute; top: 4px; left: 4px;
@@ -112,7 +120,6 @@ header p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 }
 .thumb-card.marked .mark-badge { display: block; color: var(--danger); font-size: 0.8rem; }
 .thumb-card.replaced .mark-badge { display: block; color: var(--success); font-size: 0.8rem; }
-.thumb-card.drag-over { border-color: var(--accent); transform: scale(1.05); background: rgba(88,166,255,0.08); }
 
 /* Empty state */
 .empty-state { text-align: center; padding: 48px 16px; color: var(--muted); }
@@ -290,6 +297,7 @@ let sessionStart = performance.now();  // for elapsed time tracking
 let originalFilename = null;      // set on PDF load
 let outputFilename = null;        // set on export
 let pdfPassword = null;           // stored password for protected PDFs
+let draggingIdx = -1;             // page index being dragged (reorder)
 
 // ─── Zoom ───
 let zoomLevel = 0.3;
@@ -477,7 +485,7 @@ function markSelected() {
   if (selectedIdx < 0) { showToast('Select a page first'); return; }
   const p = pages[selectedIdx];
   if (p.status === 'replaced') { showToast('Already replaced'); return; }
-  pushUndo(selectedIdx, p.status, 'marked', null, null, null);
+  pushUndo(selectedIdx, p.status, 'marked');
   p.status = 'marked';
   addHistory(selectedIdx, 'Marked');
   renderGrid();
@@ -488,10 +496,7 @@ function unmarkSelected() {
   if (selectedIdx < 0) { showToast('Select a page first'); return; }
   const p = pages[selectedIdx];
   if (p.status !== 'marked' && p.status !== 'replaced') { showToast('Page not marked'); return; }
-  pushUndo(selectedIdx, p.status, 'ok', null, null, null);
-  if (p.status === 'replaced') {
-    pushUndo(selectedIdx, 'replaced', 'ok', p.replacementBytes, p.replacementType, p.replacementName);
-  }
+  pushUndo(selectedIdx, p.status, 'ok');
   p.status = 'ok';
   p.replacementBytes = null;
   p.replacementType = null;
@@ -616,7 +621,7 @@ async function showPreview() {
 
 function confirmReplace() {
   const p = pages[selectedIdx];
-  pushUndo(selectedIdx, p.status, 'replaced', p.replacementBytes, p.replacementType, p.replacementName);
+  pushUndo(selectedIdx, p.status, 'replaced');
   p.status = 'replaced';
   p.replacementBytes = pendingReplacement.bytes;
   p.replacementType = pendingReplacement.type;
@@ -650,30 +655,59 @@ function replaceAgain() {
   fileReplace.click();
 }
 
+// ─── Page Reorder ───
+function reorderPage(fromIdx, toPosition) {
+  if (fromIdx < 0 || fromIdx >= pages.length) return;
+  const page = pages.splice(fromIdx, 1)[0];
+  const insertAt = toPosition > fromIdx ? toPosition - 1 : toPosition;
+  pages.splice(insertAt, 0, page);
+  // Adjust selectedIdx if needed
+  if (selectedIdx === fromIdx) selectedIdx = insertAt;
+  else if (fromIdx < selectedIdx && insertAt >= selectedIdx) selectedIdx--;
+  else if (fromIdx > selectedIdx && insertAt <= selectedIdx) selectedIdx++;
+  pushUndo(-1, { from: fromIdx, to: insertAt, num: page.num }, 'reorder');
+  addHistory(page.num, 'Reordered', `Position ${fromIdx+1} → ${insertAt+1}`);
+  renderGrid();
+  updateToolbar();
+  saveState();
+}
+
 // ─── Undo / Redo ───
-function pushUndo(idx, oldStatus, newStatus, oldReplacement, oldType, oldName) {
-  undoStack.push({ pageIdx: idx, oldStatus, newStatus, oldReplacement, oldType, oldName });
-  redoStack = []; // Clear redo on new action
+function pushUndo(idx, oldState, newState) {
+  undoStack.push({ pageIdx: idx, oldState: oldState, newState: newState, type: typeof oldState === 'object' && 'from' in oldState ? 'reorder' : 'edit' });
+  redoStack = [];
   if (undoStack.length > 100) undoStack.shift();
 }
 
 function undo() {
   if (undoStack.length === 0) { showToast('Nothing to undo'); return; }
   const action = undoStack.pop();
-  const p = pages[action.pageIdx];
-  redoStack.push({
-    pageIdx: action.pageIdx,
-    oldStatus: action.newStatus,
-    newStatus: action.oldStatus,
-    oldReplacement: p.replacementBytes,
-    oldType: p.replacementType,
-    oldName: p.replacementName,
-  });
-  p.status = action.oldStatus;
-  p.replacementBytes = action.oldReplacement;
-  p.replacementType = action.oldType;
-  p.replacementName = action.oldName;
-  addHistory(action.pageIdx, 'Undo');
+  if (action.type === 'reorder') {
+    // Reverse the reorder
+    const { from, to } = action.oldState;
+    const page = pages.splice(to, 1)[0];
+    pages.splice(from, 0, page);
+    if (selectedIdx === to) selectedIdx = from;
+    else if (from < selectedIdx && selectedIdx <= to) selectedIdx--;
+    else if (to <= selectedIdx && selectedIdx < from) selectedIdx++;
+    redoStack.push({ pageIdx: action.pageIdx, oldState: { from: to, to: from, num: page.num }, newState: action.oldState, type: 'reorder' });
+  } else {
+    const p = pages[action.pageIdx];
+    redoStack.push({
+      pageIdx: action.pageIdx,
+      oldState: action.newState,
+      newState: action.oldState,
+      replacementBytes: p.replacementBytes,
+      replacementType: p.replacementType,
+      replacementName: p.replacementName,
+      type: 'edit',
+    });
+    p.status = action.oldState;
+    if (action.oldState === 'ok') {
+      p.replacementBytes = null; p.replacementType = null; p.replacementName = null;
+    }
+  }
+  addHistory(action.pageIdx >= 0 ? action.pageIdx : (action.oldState?.num || 0), 'Undo');
   renderGrid();
   updateToolbar();
   saveState();
@@ -682,20 +716,31 @@ function undo() {
 function redo() {
   if (redoStack.length === 0) { showToast('Nothing to redo'); return; }
   const action = redoStack.pop();
-  const p = pages[action.pageIdx];
-  undoStack.push({
-    pageIdx: action.pageIdx,
-    oldStatus: action.oldStatus,
-    newStatus: action.newStatus,
-    oldReplacement: p.replacementBytes,
-    oldType: p.replacementType,
-    oldName: p.replacementName,
-  });
-  p.status = action.newStatus;
-  p.replacementBytes = action.oldReplacement;
-  p.replacementType = action.oldType;
-  p.replacementName = action.oldName;
-  addHistory(action.pageIdx, 'Redo');
+  if (action.type === 'reorder') {
+    const { from, to } = action.oldState;
+    const page = pages.splice(to, 1)[0];
+    pages.splice(from, 0, page);
+    if (selectedIdx === to) selectedIdx = from;
+    else if (from < selectedIdx && selectedIdx <= to) selectedIdx--;
+    else if (to <= selectedIdx && selectedIdx < from) selectedIdx++;
+    undoStack.push({ pageIdx: action.pageIdx, oldState: { from: to, to: from, num: page.num }, newState: action.oldState, type: 'reorder' });
+  } else {
+    const p = pages[action.pageIdx];
+    undoStack.push({
+      pageIdx: action.pageIdx,
+      oldState: action.newState,
+      newState: action.oldState,
+      replacementBytes: p.replacementBytes,
+      replacementType: p.replacementType,
+      replacementName: p.replacementName,
+      type: 'edit',
+    });
+    p.status = action.oldState;
+    p.replacementBytes = action.replacementBytes || null;
+    p.replacementType = action.replacementType || null;
+    p.replacementName = action.replacementName || null;
+  }
+  addHistory(action.pageIdx >= 0 ? action.pageIdx : (action.oldState?.num || 0), 'Redo');
   renderGrid();
   updateToolbar();
   saveState();
@@ -710,30 +755,29 @@ async function exportPDF() {
 
   try {
     const { PDFDocument } = PDFLib;
-    const doc = await PDFDocument.load(originalBytes, pdfPassword ? { password: pdfPassword } : {});
-    const totalPages = doc.getPageCount();
+    const origDoc = await PDFDocument.load(originalBytes, pdfPassword ? { password: pdfPassword } : {});
+    const outDoc = await PDFDocument.create();
 
-    // Work backwards so indices don't shift
-    for (let i = pages.length - 1; i >= 0; i--) {
+    // Build output PDF in pages[] array order (respects drag reorder)
+    for (let i = 0; i < pages.length; i++) {
       const p = pages[i];
       if (p.status === 'replaced' && p.replacementBytes) {
         const repDoc = await PDFDocument.load(p.replacementBytes);
-        const [repPage] = await doc.copyPages(repDoc, [0]);
-
-        // Remove original page at that position
-        doc.removePage(i);
-        // Insert replacement at same position
-        doc.insertPage(i, repPage);
-
-        progressBar.style.width = ((pages.length - i) / pages.length * 100) + '%';
-        progressText.textContent = `Replacing page ${p.num}...`;
+        const [repPage] = await outDoc.copyPages(repDoc, [0]);
+        outDoc.addPage(repPage);
+      } else {
+        // Copy original page by its number (1-based)
+        const [origPage] = await outDoc.copyPages(origDoc, [p.num - 1]);
+        outDoc.addPage(origPage);
       }
+      progressBar.style.width = ((i + 1) / pages.length * 100) + '%';
+      progressText.textContent = `Building page ${i + 1} of ${pages.length}...`;
     }
 
     progressText.textContent = 'Saving...';
     progressBar.style.width = '95%';
 
-    const pdfBytes = await doc.save();
+    const pdfBytes = await outDoc.save();
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
 
     hideProgress();
@@ -862,18 +906,19 @@ function renderGrid() {
     const card = document.createElement('div');
     card.className = `thumb-card${idx === selectedIdx ? ' selected' : ''}${p.status === 'marked' ? ' marked' : ''}${p.status === 'replaced' ? ' replaced' : ''}`;
     card.dataset.index = idx;
+    card.draggable = true;
 
     // Show thumbnail
     const img = document.createElement('img');
     img.src = p.thumbnailUrl;
     img.alt = `Page ${p.num}`;
-    img.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;pointer-events:none;';
     card.appendChild(img);
 
-    // Page number
+    // Page number — show original num + position if reordered
     const label = document.createElement('span');
     label.className = 'page-num';
-    label.textContent = `P${p.num}`;
+    label.textContent = p.num !== idx + 1 ? `P${p.num} [#${idx+1}]` : `P${p.num}`;
     card.appendChild(label);
 
     // Status badge
@@ -883,21 +928,123 @@ function renderGrid() {
     card.appendChild(badge);
 
     // Click to select
-    card.addEventListener('click', () => selectPage(idx));
+    card.addEventListener('click', e => {
+      if (!e.defaultPrevented) selectPage(idx);
+    });
 
-    // Drag-over for replacement drop
-    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('drag-over'); });
+    // Drag start — mark as dragging
+    card.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', idx.toString());
+      e.dataTransfer.effectAllowed = 'move';
+      card.classList.add('dragging');
+      draggingIdx = idx;
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      clearDropZones();
+      draggingIdx = -1;
+    });
+
+    // Drag-over for replacement file drop
+    card.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!e.dataTransfer.types.includes('Files')) card.classList.add('drag-over');
+    });
     card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+
+    // Drop — resolve: file = replace, page = reorder
     card.addEventListener('drop', e => {
       e.preventDefault();
       card.classList.remove('drag-over');
-      selectPage(idx);
-      const file = e.dataTransfer.files[0];
-      if (file) addReplacement(file);
+      if (e.dataTransfer.files.length > 0) {
+        // External file dropped — replacement flow
+        selectPage(idx);
+        addReplacement(e.dataTransfer.files[0]);
+      } else if (draggingIdx >= 0 && draggingIdx !== idx) {
+        // Page dropped on another page — reorder to this position
+        reorderPage(draggingIdx, idx);
+      }
     });
 
     thumbGrid.appendChild(card);
+
+    // ── Touch drag-drop for mobile ──
+    let touchStartTime, touchStartX, touchStartY, touchMoved = false;
+    card.addEventListener('touchstart', e => {
+      touchStartTime = Date.now();
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchMoved = false;
+    }, { passive: true });
+    card.addEventListener('touchmove', e => {
+      if (touchMoved) {
+        const dx = e.touches[0].clientX - touchStartX;
+        const dy = e.touches[0].clientY - touchStartY;
+        card.style.transform = `translate(${dx}px, ${dy}px)`;
+        card.style.zIndex = '10';
+        card.style.opacity = '0.7';
+        draggingIdx = idx;
+        insertDropZones();
+        e.preventDefault();
+        return;
+      }
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      if (Math.abs(dx) > 8 || Math.abs(dy) > 8 || Date.now() - touchStartTime > 400) {
+        touchMoved = true;
+        card.style.transform = `translate(${dx}px, ${dy}px)`;
+        card.style.zIndex = '10';
+        card.style.opacity = '0.7';
+        draggingIdx = idx;
+        insertDropZones();
+        e.preventDefault();
+      }
+    });
+    card.addEventListener('touchend', e => {
+      if (!touchMoved) { card.style.transform = ''; card.style.zIndex = ''; card.style.opacity = ''; return; }
+      card.style.transform = ''; card.style.zIndex = ''; card.style.opacity = '';
+      const touch = e.changedTouches[0];
+      const target = document.elementFromPoint(touch.clientX, touch.clientY);
+      const targetCard = target?.closest('.thumb-card');
+      const targetZone = target?.closest('.drop-zone-between');
+      if (targetCard) {
+        const targetIdx = parseInt(targetCard.dataset.index);
+        if (targetIdx !== idx) reorderPage(idx, targetIdx);
+      } else if (targetZone) {
+        reorderPage(idx, parseInt(targetZone.dataset.position));
+      }
+      clearDropZones();
+      draggingIdx = -1;
+      touchMoved = false;
+    });
   });
+
+  // Insert drop zones between cards
+  insertDropZones();
+}
+
+function insertDropZones() {
+  document.querySelectorAll('.drop-zone-between').forEach(el => el.remove());
+  const cards = [...thumbGrid.querySelectorAll('.thumb-card')];
+  cards.forEach((card, i) => {
+    if (i < cards.length) {
+      const zone = document.createElement('div');
+      zone.className = 'drop-zone-between';
+      zone.dataset.position = i + 1; // insert AFTER card at position i
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+      zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+      zone.addEventListener('drop', e => {
+        e.preventDefault();
+        zone.classList.remove('drag-over');
+        if (draggingIdx >= 0) reorderPage(draggingIdx, parseInt(zone.dataset.position));
+      });
+      card.after(zone);
+    }
+  });
+}
+
+function clearDropZones() {
+  document.querySelectorAll('.drop-zone-between').forEach(el => el.remove());
 }
 
 function updateToolbar() {
@@ -1078,7 +1225,7 @@ document.addEventListener('keydown', e => {
 function deleteReplacement() {
   if (selectedIdx < 0 || pages[selectedIdx].status !== 'replaced') return;
   const p = pages[selectedIdx];
-  pushUndo(selectedIdx, 'replaced', 'ok', p.replacementBytes, p.replacementType, p.replacementName);
+  pushUndo(selectedIdx, 'replaced', 'ok');
   p.status = 'ok';
   p.replacementBytes = null;
   p.replacementType = null;
