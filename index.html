@@ -6,8 +6,8 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>Image to PDF — Convert 250+ Images</title>
-<meta name="description" content="Free, private image-to-PDF converter. Upload up to 500 images from your phone or computer. No upload to any server — everything happens in your browser.">
+<title>PDF Page Corrector — Fix incorrect pages</title>
+<meta name="description" content="Free, private PDF page replacement tool. Replace any incorrect, damaged, or missing pages from your PDF. Drag-drop, camera, or upload replacement pages. All processing happens in your browser.">
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -20,6 +20,7 @@
   --accent: #58a6ff;
   --accent-hover: #79c0ff;
   --danger: #f85149;
+  --warning: #d29922;
   --success: #3fb950;
   --radius: 12px;
 }
@@ -33,282 +34,136 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.container { max-width: 800px; margin: 0 auto; }
+.container { max-width: 960px; margin: 0 auto; }
 
 /* Header */
-header {
-  text-align: center;
-  padding: 24px 0 8px;
-}
+header { text-align: center; padding: 24px 0 8px; }
 header h1 {
-  font-size: 1.6rem;
-  font-weight: 700;
+  font-size: 1.6rem; font-weight: 700;
   background: linear-gradient(135deg, var(--accent), #a371f7);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
-header p {
-  color: var(--muted);
-  font-size: 0.9rem;
-  margin-top: 4px;
-}
+header p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 
 /* Upload zone */
 .upload-zone {
-  border: 2px dashed var(--border);
-  border-radius: var(--radius);
-  padding: 32px 16px;
-  text-align: center;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: var(--surface);
-  margin: 16px 0;
-  position: relative;
+  border: 2px dashed var(--border); border-radius: var(--radius);
+  padding: 32px 16px; text-align: center; cursor: pointer;
+  transition: all 0.2s; background: var(--surface); margin: 16px 0;
 }
-.upload-zone:hover, .upload-zone.drag-over {
-  border-color: var(--accent);
-  background: rgba(88, 166, 255, 0.05);
-}
+.upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,0.05); }
 .upload-zone .icon { font-size: 2.5rem; margin-bottom: 8px; }
 .upload-zone .primary-text { font-weight: 600; font-size: 1rem; }
 .upload-zone .sub-text { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 .upload-zone input[type="file"] { display: none; }
 
-.btn-row {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  margin-top: 12px;
-  flex-wrap: wrap;
-}
-
 /* Buttons */
 .btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: all 0.15s;
-  background: var(--surface);
-  color: var(--text);
-  white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 10px 20px; border-radius: 8px; font-size: 0.9rem;
+  font-weight: 600; border: 1px solid var(--border); cursor: pointer;
+  transition: all 0.15s; background: var(--surface); color: var(--text); white-space: nowrap;
 }
 .btn:active { transform: scale(0.97); }
-.btn-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #000;
-}
+.btn-primary { background: var(--accent); border-color: var(--accent); color: #000; }
 .btn-primary:hover { background: var(--accent-hover); }
-.btn-primary:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-.btn-danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-.btn-danger:hover { background: rgba(248, 81, 73, 0.1); }
+.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-success { border-color: var(--success); color: var(--success); }
+.btn-success:hover { background: rgba(63,185,80,0.1); }
+.btn-danger { border-color: var(--danger); color: var(--danger); }
+.btn-danger:hover { background: rgba(248,81,73,0.1); }
+.btn-sm { padding: 6px 12px; font-size: 0.8rem; }
 
 /* Toolbar */
 .toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 16px 0;
-  padding: 12px 16px;
-  background: var(--surface);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
+  display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;
+  gap: 8px; margin: 16px 0; padding: 12px 16px; background: var(--surface);
+  border-radius: var(--radius); border: 1px solid var(--border);
 }
-.toolbar .stats {
-  color: var(--muted);
-  font-size: 0.85rem;
-}
+.toolbar .stats { color: var(--muted); font-size: 0.85rem; }
 .toolbar .stats strong { color: var(--text); }
+.toolbar .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* Options */
-.options {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.options label {
-  font-size: 0.8rem;
-  color: var(--muted);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.options select {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 6px 10px;
-  font-size: 0.85rem;
-}
-
-/* Image grid */
-.image-grid {
+/* Thumbnail grid */
+.thumb-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 8px;
-  margin: 16px 0;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px; margin: 16px 0;
 }
-.image-card {
-  position: relative;
-  border-radius: 8px;
-  overflow: hidden;
-  aspect-ratio: 1;
-  background: var(--surface);
-  border: 2px solid var(--border);
-  cursor: grab;
-  transition: border-color 0.15s, transform 0.1s;
+.thumb-card {
+  position: relative; border-radius: 8px; overflow: hidden;
+  aspect-ratio: 3/4; background: var(--surface);
+  border: 3px solid var(--border); cursor: pointer; transition: all 0.15s;
 }
-.image-card:active { cursor: grabbing; }
-.image-card.dragging {
-  opacity: 0.5;
-  border-color: var(--accent);
+.thumb-card:hover { border-color: var(--accent); }
+.thumb-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(88,166,255,0.4); }
+.thumb-card.marked { border-color: var(--danger); }
+.thumb-card.marked.selected { border-color: var(--warning); }
+.thumb-card.replaced { border-color: var(--success); }
+.thumb-card canvas { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.thumb-card .page-num {
+  position: absolute; top: 4px; left: 4px;
+  background: rgba(0,0,0,0.65); color: #fff; font-size: 0.65rem;
+  font-weight: 700; padding: 2px 6px; border-radius: 4px; pointer-events: none;
 }
-.image-card.drag-over {
-  border-color: var(--accent);
-  transform: scale(1.03);
+.thumb-card .mark-badge {
+  position: absolute; top: 4px; right: 4px;
+  display: none; pointer-events: none;
 }
-.image-card img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  pointer-events: none;
-  image-orientation: from-image;
-}
-.image-card .index {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  background: rgba(0,0,0,0.7);
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  pointer-events: none;
-}
-.image-card .remove-btn {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(0,0,0,0.7);
-  color: var(--danger);
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.image-card:hover .remove-btn,
-.image-card:focus-within .remove-btn { opacity: 1; }
-@media (hover: none) {
-  .image-card .remove-btn { opacity: 0.7; }
-}
+.thumb-card.marked .mark-badge { display: block; color: var(--danger); font-size: 0.8rem; }
+.thumb-card.replaced .mark-badge { display: block; color: var(--success); font-size: 0.8rem; }
+.thumb-card.drag-over { border-color: var(--accent); transform: scale(1.05); background: rgba(88,166,255,0.08); }
 
-.image-card .move-btns {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  opacity: 0;
-  transition: opacity 0.15s;
+/* Empty state */
+.empty-state { text-align: center; padding: 48px 16px; color: var(--muted); }
+.empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+
+/* Preview overlay */
+.overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+  z-index: 100; justify-content: center; align-items: center; flex-direction: column;
 }
-.image-card:hover .move-btns,
-.image-card:focus-within .move-btns { opacity: 1; }
-@media (hover: none) {
-  .image-card .move-btns { opacity: 0.7; }
+.overlay.active { display: flex; }
+.overlay-content {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 24px; max-width: 700px;
+  width: 90%; max-height: 85vh; overflow-y: auto;
 }
-.move-btns button {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  border: none;
-  background: rgba(0,0,0,0.7);
-  color: #fff;
-  font-size: 0.7rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.overlay h2 { font-size: 1.1rem; margin-bottom: 16px; text-align: center; }
+.preview-row { display: flex; gap: 16px; margin-bottom: 16px; }
+.preview-col { flex: 1; text-align: center; }
+.preview-col h3 { font-size: 0.8rem; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; }
+.preview-col canvas, .preview-col img {
+  max-width: 100%; border-radius: 6px; border: 2px solid var(--border);
 }
+.preview-actions { display: flex; gap: 8px; justify-content: center; margin-top: 12px; }
 
 /* Progress */
-.progress-container {
-  display: none;
-  margin: 16px 0;
-  padding: 16px;
-  background: var(--surface);
-  border-radius: var(--radius);
-  border: 1px solid var(--border);
-}
+.progress-container { display: none; margin: 16px 0; padding: 16px; background: var(--surface); border-radius: var(--radius); border: 1px solid var(--border); }
 .progress-container.active { display: block; }
-.progress-bar-wrapper {
-  height: 8px;
-  background: var(--border);
-  border-radius: 4px;
-  overflow: hidden;
-  margin: 8px 0;
+.progress-bar-wrapper { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 8px 0; }
+.progress-bar { height: 100%; background: linear-gradient(90deg, var(--accent), var(--success)); border-radius: 4px; transition: width 0.3s; width: 0%; }
+.progress-text { font-size: 0.85rem; color: var(--muted); text-align: center; }
+
+/* History log */
+.history-log {
+  margin: 16px 0; font-size: 0.8rem; color: var(--muted);
+  max-height: 200px; overflow-y: auto; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 12px;
 }
-.progress-bar {
-  height: 100%;
-  background: linear-gradient(90deg, var(--accent), var(--success));
-  border-radius: 4px;
-  transition: width 0.2s;
-  width: 0%;
-}
-.progress-text {
-  font-size: 0.85rem;
-  color: var(--muted);
-  text-align: center;
-}
-.progress-text .current { color: var(--text); font-weight: 600; }
+.history-log .entry { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.history-log .entry.undo { opacity: 0.5; text-decoration: line-through; }
+.history-log .entry .time { color: var(--muted); }
 
 /* Footer */
-footer {
-  text-align: center;
-  padding: 24px 0;
-  color: var(--muted);
-  font-size: 0.75rem;
-}
+footer { text-align: center; padding: 24px 0; color: var(--muted); font-size: 0.75rem; }
 footer a { color: var(--accent); text-decoration: none; }
 
 /* Toast */
 .toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  padding: 10px 24px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  z-index: 1000;
-  animation: toastIn 0.3s ease;
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--surface); border: 1px solid var(--border); padding: 10px 24px;
+  border-radius: 8px; font-size: 0.85rem; z-index: 1000; animation: toastIn 0.3s ease;
   box-shadow: 0 4px 20px rgba(0,0,0,0.5);
 }
 @keyframes toastIn {
@@ -316,529 +171,637 @@ footer a { color: var(--accent); text-decoration: none; }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
-/* Empty state */
-.empty-state {
-  text-align: center;
-  padding: 48px 16px;
-  color: var(--muted);
+/* Replace zone */
+.replace-drop-zone {
+  display: none; margin: 16px 0; padding: 24px; border: 2px dashed var(--warning);
+  border-radius: var(--radius); text-align: center; background: rgba(210,153,34,0.05);
 }
-.empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+.replace-drop-zone.active { display: block; }
 </style>
 </head>
 <body>
 
 <div class="container">
   <header>
-    <h1>📄 Image → PDF</h1>
-    <p>Convert up to 500 images into a single PDF — right in your browser. Nothing leaves your device.</p>
+    <h1>📄 PDF Page Corrector</h1>
+    <p>Fix incorrect, damaged, or missing pages — right in your browser. Nothing leaves your device.</p>
   </header>
 
   <!-- Upload Zone -->
-  <div class="upload-zone" id="uploadZone">
+  <div class="upload-zone" id="uploadZonePdf">
     <div class="icon">📁</div>
-    <div class="primary-text">Tap to select images</div>
-    <div class="sub-text">or drag &amp; drop • JPG, PNG, WebP, HEIC • up to 500 images</div>
-    <input type="file" id="fileInput" multiple accept="image/*">
-    <div class="btn-row">
-      <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
-        📷 Choose Images
-      </button>
-      <button class="btn" id="cameraBtn" onclick="openCamera()">
-        📸 Camera
-      </button>
-    </div>
+    <div class="primary-text">Tap to select a PDF to correct</div>
+    <div class="sub-text">or drag &amp; drop • up to 100 MB</div>
+    <input type="file" id="fileInputPdf" accept="application/pdf">
   </div>
 
-  <!-- Toolbar (hidden until images added) -->
+  <!-- Replace drop zone (shown when page is selected) -->
+  <div class="replace-drop-zone" id="replaceZone">
+    <div class="icon">📎</div>
+    <div class="primary-text">Drop replacement here — or tap to choose</div>
+    <div class="sub-text">Image (JPG/PNG) or PDF page • Camera also supported</div>
+    <div class="btn-row" style="margin-top:10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" onclick="document.getElementById('fileReplace').click()">📷 Choose File</button>
+      <button class="btn btn-sm" onclick="openReplaceCamera()">📸 Camera</button>
+    </div>
+    <input type="file" id="fileReplace" accept="image/*,application/pdf" style="display:none">
+  </div>
+
+  <!-- Toolbar -->
   <div class="toolbar" id="toolbar" style="display:none">
-    <div class="stats">
-      <strong id="imageCount">0</strong> images •
-      <span id="totalSize">0 MB</span>
-    </div>
-    <div class="options">
-      <label>
-        Page:
-        <select id="pageSize">
-          <option value="a4">A4</option>
-          <option value="letter">Letter</option>
-        </select>
-      </label>
-      <label>
-        Fit:
-        <select id="fitMode">
-          <option value="contain">Contain</option>
-          <option value="cover">Cover (crop)</option>
-        </select>
-      </label>
-      <button class="btn btn-danger" id="clearBtn" onclick="clearAll()">🗑 Clear All</button>
+    <div class="stats"><strong id="pageCount">0</strong> pages · <span id="markCount">0</span> marked</div>
+    <div class="actions">
+      <button class="btn btn-sm" onclick="undo()" title="Undo (Ctrl+Z)">↩ Undo</button>
+      <button class="btn btn-sm" onclick="redo()" title="Redo (Ctrl+Y)">↪ Redo</button>
+      <button class="btn btn-sm" onclick="markSelected()">🏷 Mark Page</button>
+      <button class="btn btn-sm" onclick="unmarkSelected()">✓ Unmark</button>
+      <button class="btn btn-primary btn-sm" id="exportBtn" disabled onclick="exportPDF()">📄 Export PDF</button>
     </div>
   </div>
-
-  <!-- Generate Button -->
-  <button class="btn btn-primary" id="generateBtn" style="display:none; width:100%; justify-content:center; padding:14px; font-size:1rem; margin:12px 0;"
-          onclick="generatePDF()">
-    📄 Generate PDF
-  </button>
 
   <!-- Progress -->
   <div class="progress-container" id="progressContainer">
-    <div class="progress-text">
-      Processing <span class="current" id="progressCurrent">0</span> / <span id="progressTotal">0</span> images...
-    </div>
-    <div class="progress-bar-wrapper">
-      <div class="progress-bar" id="progressBar"></div>
-    </div>
-    <div class="progress-text" id="progressStatus">Preparing...</div>
+    <div class="progress-text" id="progressText">Processing...</div>
+    <div class="progress-bar-wrapper"><div class="progress-bar" id="progressBar"></div></div>
   </div>
 
-  <!-- Image Grid -->
-  <div class="image-grid" id="imageGrid"></div>
-  <div class="empty-state" id="emptyState">
-    <div class="icon">🖼️</div>
-    <p>Your images will appear here</p>
+  <!-- Thumbnail Grid -->
+  <div class="thumb-grid" id="thumbGrid"></div>
+  <div class="empty-state" id="emptyState"><div class="icon">📄</div><p>Your PDF pages will appear here</p></div>
+
+  <!-- Preview Overlay -->
+  <div class="overlay" id="previewOverlay">
+    <div class="overlay-content">
+      <h2>Confirm Replacement — Page <span id="previewPageNum">1</span></h2>
+      <div class="preview-row">
+        <div class="preview-col">
+          <h3>❌ Original</h3>
+          <canvas id="previewOriginal"></canvas>
+        </div>
+        <div class="preview-col">
+          <h3>✅ Replacement</h3>
+          <canvas id="previewReplacement"></canvas>
+        </div>
+      </div>
+      <div class="preview-actions">
+        <button class="btn btn-success" onclick="confirmReplace()">✓ Confirm</button>
+        <button class="btn btn-danger" onclick="cancelReplace()">✕ Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- History Log -->
+  <div class="history-log" id="historyLog" style="display:none">
+    <strong style="margin-bottom:8px;display:block;">📋 Edit History</strong>
+    <div id="historyEntries"></div>
   </div>
 
   <footer>
-    <p>🔒 <strong>100% private.</strong> All processing happens on your device. No images are ever uploaded anywhere.</p>
-    <p>Built with <a href="https://github.com/parallax/jsPDF" target="_blank">jsPDF</a> • 
-       <a href="https://github.com/shivtcdfinance/image-to-pdf" target="_blank">Source on GitHub</a></p>
+    <p>🔒 <strong>100% private.</strong> All processing happens on your device.</p>
+    <p>Built with <a href="https://mozilla.github.io/pdf.js/" target="_blank">pdf.js</a> · <a href="https://github.com/Hopding/pdf-lib" target="_blank">pdf-lib</a> · <a href="#">Source on GitHub</a></p>
   </footer>
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 
 <script>
+'use strict';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
 // ─── State ───
-let images = []; // { id, file, dataUrl, width, height }
-let idCounter = 0;
+let originalBytes = null;          // ArrayBuffer of original PDF
+let originalDoc = null;           // pdf.js document proxy
+let pages = [];                   // {num, status:'ok'|'marked'|'replaced', thumbnailUrl, replacementBytes, replacementType, replacementName}
+let selectedIdx = -1;             // currently selected page index
+let undoStack = [];               // [{type, pageIdx, oldStatus, oldReplacement, ...}]
+let redoStack = [];
+let historyLog = [];              // [{time, page, action, source, status}]
+let pendingReplacement = null;    // {bytes, type, name} — awaiting confirmation
 
-// ─── Correct Orientation ───
-// The browser's <img> element respects EXIF orientation by default
-// in Chrome 87+, Safari 14+, Firefox 106+. Reading the image via
-// FileReader → Image → Canvas gives us correctly-oriented pixel
-// data for ALL formats (JPEG, HEIC, PNG, WebP) with zero custom
-// EXIF parsing. This is the most reliable cross-browser approach.
-async function getOrientedImage(file) {
-  try {
-    const dataUrl = await readFileAsDataURL(file);
-    const img = await loadImage(dataUrl);
-    const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    // Re-encode to a standard format for PDF use
-    const mime = file.type === 'image/png' ? 'image/png' :
-                 file.type === 'image/webp' ? 'image/webp' : 'image/jpeg';
-    const quality = mime === 'image/jpeg' ? 0.95 : undefined;
-    const blob = await new Promise(r => canvas.toBlob(r, mime, quality));
-    const correctedUrl = await new Promise(r => {
-      const fr = new FileReader();
-      fr.onload = () => r(fr.result);
-      fr.readAsDataURL(blob);
-    });
-    return { dataUrl: correctedUrl, width: canvas.width, height: canvas.height };
-  } catch (e) {
-    // Fallback — shouldn't happen on any modern browser
-    console.warn('Canvas fallback used:', e);
-    const dataUrl = await readFileAsDataURL(file);
-    const dims = await getImageDimensions(dataUrl);
-    return { dataUrl, width: dims.width, height: dims.height };
-  }
-}
+// ─── DOM refs ───
+const uploadZonePdf = document.getElementById('uploadZonePdf');
+const fileInputPdf = document.getElementById('fileInputPdf');
+const fileReplace = document.getElementById('fileReplace');
+const replaceZone = document.getElementById('replaceZone');
+const toolbar = document.getElementById('toolbar');
+const thumbGrid = document.getElementById('thumbGrid');
+const emptyState = document.getElementById('emptyState');
+const exportBtn = document.getElementById('exportBtn');
+const pageCount = document.getElementById('pageCount');
+const markCount = document.getElementById('markCount');
+const progressContainer = document.getElementById('progressContainer');
+const progressBar = document.getElementById('progressBar');
+const progressText = document.getElementById('progressText');
+const previewOverlay = document.getElementById('previewOverlay');
+const previewPageNum = document.getElementById('previewPageNum');
+const previewOriginal = document.getElementById('previewOriginal');
+const previewReplacement = document.getElementById('previewReplacement');
+const historyLogDiv = document.getElementById('historyLog');
+const historyEntries = document.getElementById('historyEntries');
 
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = reject;
-    img.src = src;
+// ─── PDF Upload ───
+fileInputPdf.addEventListener('change', e => {
+  if (e.target.files[0]) loadOriginalPDF(e.target.files[0]);
+  fileInputPdf.value = '';
+});
+
+function setupDragDrop(zone, fileInput, onFile) {
+  zone.addEventListener('click', () => fileInput.click());
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) onFile(file);
   });
 }
 
-// ─── DOM refs ───
-const uploadZone = document.getElementById('uploadZone');
-const fileInput = document.getElementById('fileInput');
-const imageGrid = document.getElementById('imageGrid');
-const emptyState = document.getElementById('emptyState');
-const toolbar = document.getElementById('toolbar');
-const generateBtn = document.getElementById('generateBtn');
-const clearBtn = document.getElementById('clearBtn');
-const progressContainer = document.getElementById('progressContainer');
-const progressBar = document.getElementById('progressBar');
-const progressCurrent = document.getElementById('progressCurrent');
-const progressTotal = document.getElementById('progressTotal');
-const progressStatus = document.getElementById('progressStatus');
-const imageCount = document.getElementById('imageCount');
-const totalSize = document.getElementById('totalSize');
-const pageSize = document.getElementById('pageSize');
-const fitMode = document.getElementById('fitMode');
+setupDragDrop(uploadZonePdf, fileInputPdf, loadOriginalPDF);
 
-// ─── File Input ───
-fileInput.addEventListener('change', (e) => {
-  if (e.target.files.length > 0) {
-    addFiles(Array.from(e.target.files));
-    fileInput.value = '';
+async function loadOriginalPDF(file) {
+  if (!file || file.type !== 'application/pdf') { showToast('Please select a PDF file'); return; }
+
+  showProgress('Loading PDF...', 0);
+  const ab = await file.arrayBuffer();
+  originalBytes = ab;
+
+  try {
+    originalDoc = await pdfjsLib.getDocument({ data: ab.slice(0) }).promise;
+  } catch (e) {
+    showToast('Failed to open PDF. It may be corrupted or password-protected.');
+    hideProgress();
+    return;
   }
-});
 
-// ─── Drag & Drop ───
-uploadZone.addEventListener('dragover', (e) => {
-  e.preventDefault();
-  uploadZone.classList.add('drag-over');
-});
-uploadZone.addEventListener('dragleave', () => {
-  uploadZone.classList.remove('drag-over');
-});
-uploadZone.addEventListener('drop', (e) => {
-  e.preventDefault();
-  uploadZone.classList.remove('drag-over');
-  if (e.dataTransfer.files.length > 0) {
-    addFiles(Array.from(e.dataTransfer.files));
+  const total = originalDoc.numPages;
+  showProgress('Rendering thumbnails...', 0);
+  pages = [];
+  selectedIdx = -1;
+  undoStack = [];
+  redoStack = [];
+  historyLog = [];
+
+  for (let i = 1; i <= total; i++) {
+    const pageProxy = await originalDoc.getPage(i);
+    const viewport = pageProxy.getViewport({ scale: 0.3 });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d');
+    await pageProxy.render({ canvasContext: ctx, viewport }).promise;
+
+    pages.push({
+      num: i,
+      status: 'ok',
+      thumbnailUrl: canvas.toDataURL(),
+      replacementBytes: null,
+      replacementType: null,
+      replacementName: null,
+      // original dims for pdf-lib
+      origWidth: pageProxy.view[2],
+      origHeight: pageProxy.view[3],
+    });
+
+    progressBar.style.width = (i / total * 100) + '%';
+    progressText.textContent = `Rendering page ${i} of ${total}...`;
   }
-});
 
-// Also allow drop on the whole page
-document.addEventListener('dragover', (e) => e.preventDefault());
-document.addEventListener('drop', (e) => {
-  e.preventDefault();
-  if (e.dataTransfer.files.length > 0) {
-    addFiles(Array.from(e.dataTransfer.files));
+  hideProgress();
+  renderGrid();
+  updateToolbar();
+  showToast(`Loaded ${total} pages`);
+}
+
+// ─── Click to select a page for replacement ───
+function selectPage(idx) {
+  selectedIdx = idx;
+  renderGrid();
+  if (idx >= 0 && idx < pages.length && pages[idx].status !== 'replaced') {
+    replaceZone.classList.add('active');
+  } else {
+    replaceZone.classList.remove('active');
   }
+}
+
+// ─── Mark/Unmark ───
+function markSelected() {
+  if (selectedIdx < 0) { showToast('Select a page first'); return; }
+  const p = pages[selectedIdx];
+  if (p.status === 'replaced') { showToast('Already replaced'); return; }
+  pushUndo(selectedIdx, p.status, 'marked', null, null, null);
+  p.status = 'marked';
+  addHistory(selectedIdx, 'Marked');
+  renderGrid();
+  updateToolbar();
+}
+
+function unmarkSelected() {
+  if (selectedIdx < 0) { showToast('Select a page first'); return; }
+  const p = pages[selectedIdx];
+  if (p.status !== 'marked' && p.status !== 'replaced') { showToast('Page not marked'); return; }
+  pushUndo(selectedIdx, p.status, 'ok', null, null, null);
+  if (p.status === 'replaced') {
+    pushUndo(selectedIdx, 'replaced', 'ok', p.replacementBytes, p.replacementType, p.replacementName);
+  }
+  p.status = 'ok';
+  p.replacementBytes = null;
+  p.replacementType = null;
+  p.replacementName = null;
+  addHistory(selectedIdx, 'Unmarked');
+  renderGrid();
+  updateToolbar();
+}
+
+// ─── Replacement upload ───
+setupDragDrop(replaceZone, fileReplace, (file) => {
+  addReplacement(file);
 });
 
-// ─── Camera ───
-function openCamera() {
+fileReplace.addEventListener('change', e => {
+  if (e.target.files[0]) addReplacement(e.target.files[0]);
+  fileReplace.value = '';
+});
+
+function openReplaceCamera() {
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = 'image/*';
   input.capture = 'environment';
-  input.multiple = true;
-  input.onchange = (e) => {
-    if (e.target.files.length > 0) {
-      addFiles(Array.from(e.target.files));
-    }
-  };
+  input.onchange = e => { if (e.target.files[0]) addReplacement(e.target.files[0]); };
   input.click();
 }
 
-// ─── Add Files ───
-async function addFiles(files) {
-  const remaining = 500 - images.length;
-  if (remaining <= 0) {
-    showToast('Maximum 500 images reached');
-    return;
-  }
+async function addReplacement(file) {
+  if (selectedIdx < 0) { showToast('Select a page to replace first'); return; }
 
-  const toAdd = files.slice(0, remaining);
-  if (files.length > remaining) {
-    showToast(`Only adding ${remaining} more (500 max)`);
-  }
+  const ab = await file.arrayBuffer();
+  let replacementBytes = ab;
+  let replacementType = file.type;
+  let replacementName = file.name;
 
-  // Filter out non-images
-  const imageFiles = toAdd.filter(f => f.type.startsWith('image/'));
-  if (imageFiles.length === 0) {
-    showToast('No image files selected');
-    return;
-  }
+  if (file.type.startsWith('image/')) {
+    // Convert image to PDF page using pdf-lib
+    const { PDFDocument, PageSizes } = PDFLib;
+    const pdfDoc = await PDFDocument.create();
+    let img;
+    if (file.type === 'image/png') img = await pdfDoc.embedPng(ab);
+    else img = await pdfDoc.embedJpg(ab);
 
-  progressContainer.classList.add('active');
-  progressTotal.textContent = imageFiles.length;
-  progressStatus.textContent = 'Loading images...';
+    const page = pdfDoc.addPage([595, 842]); // A4 default
+    const scale = Math.min(
+      page.getWidth() / img.width,
+      page.getHeight() / img.height
+    );
+    const x = (page.getWidth() - img.width * scale) / 2;
+    const y = (page.getHeight() - img.height * scale) / 2;
+    page.drawImage(img, { x, y, width: img.width * scale, height: img.height * scale });
 
-  for (let i = 0; i < imageFiles.length; i++) {
-    const file = imageFiles[i];
+    replacementBytes = await pdfDoc.save();
+    replacementType = 'application/pdf';
+  } else if (file.type === 'application/pdf') {
+    // If it's a multi-page PDF, just take the first page
     try {
-      const corrected = await getOrientedImage(file);
-      images.push({
-        id: idCounter++,
-        file,
-        dataUrl: corrected.dataUrl,
-        width: corrected.width,
-        height: corrected.height
-      });
-      progressCurrent.textContent = i + 1;
-      progressBar.style.width = ((i + 1) / imageFiles.length * 100) + '%';
-    } catch (err) {
-      console.error('Failed to load image:', file.name, err);
-    }
+      const tmpDoc = await PDFLib.PDFDocument.load(ab);
+      if (tmpDoc.getPageCount() > 1) {
+        // Keep only first page
+        while (tmpDoc.getPageCount() > 1) tmpDoc.removePage(1);
+        replacementBytes = await tmpDoc.save();
+      }
+    } catch (e) { /* use original bytes */ }
   }
 
-  progressContainer.classList.remove('active');
-  render();
-  showToast(`Added ${imageFiles.length} image${imageFiles.length > 1 ? 's' : ''}`);
+  pendingReplacement = { bytes: replacementBytes, type: replacementType, name: replacementName };
+  showPreview();
 }
 
-function readFileAsDataURL(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
+// ─── Preview ───
+async function showPreview() {
+  if (!pendingReplacement || selectedIdx < 0) return;
+
+  const p = pages[selectedIdx];
+  previewPageNum.textContent = p.num;
+  previewOverlay.classList.add('active');
+
+  // Render original
+  const origPage = await originalDoc.getPage(p.num);
+  const vp = origPage.getViewport({ scale: 0.8 });
+  previewOriginal.width = vp.width;
+  previewOriginal.height = vp.height;
+  await origPage.render({ canvasContext: previewOriginal.getContext('2d'), viewport: vp }).promise;
+
+  // Render replacement
+  const repDoc = await pdfjsLib.getDocument({ data: pendingReplacement.bytes.slice(0) }).promise;
+  const repPage = await repDoc.getPage(1);
+  const rvp = repPage.getViewport({ scale: 0.8 });
+  previewReplacement.width = rvp.width;
+  previewReplacement.height = rvp.height;
+  await repPage.render({ canvasContext: previewReplacement.getContext('2d'), viewport: rvp }).promise;
+}
+
+function confirmReplace() {
+  const p = pages[selectedIdx];
+  pushUndo(selectedIdx, p.status, 'replaced', p.replacementBytes, p.replacementType, p.replacementName);
+  p.status = 'replaced';
+  p.replacementBytes = pendingReplacement.bytes;
+  p.replacementType = pendingReplacement.type;
+  p.replacementName = pendingReplacement.name;
+  addHistory(selectedIdx, `Replaced with ${pendingReplacement.name}`);
+  pendingReplacement = null;
+  previewOverlay.classList.remove('active');
+  replaceZone.classList.remove('active');
+  renderGrid();
+  updateToolbar();
+  saveState();
+}
+
+function cancelReplace() {
+  pendingReplacement = null;
+  previewOverlay.classList.remove('active');
+}
+
+// ─── Undo / Redo ───
+function pushUndo(idx, oldStatus, newStatus, oldReplacement, oldType, oldName) {
+  undoStack.push({ pageIdx: idx, oldStatus, newStatus, oldReplacement, oldType, oldName });
+  redoStack = []; // Clear redo on new action
+  if (undoStack.length > 100) undoStack.shift();
+}
+
+function undo() {
+  if (undoStack.length === 0) { showToast('Nothing to undo'); return; }
+  const action = undoStack.pop();
+  const p = pages[action.pageIdx];
+  redoStack.push({
+    pageIdx: action.pageIdx,
+    oldStatus: action.newStatus,
+    newStatus: action.oldStatus,
+    oldReplacement: p.replacementBytes,
+    oldType: p.replacementType,
+    oldName: p.replacementName,
   });
+  p.status = action.oldStatus;
+  p.replacementBytes = action.oldReplacement;
+  p.replacementType = action.oldType;
+  p.replacementName = action.oldName;
+  addHistory(action.pageIdx, 'Undo');
+  renderGrid();
+  updateToolbar();
+  saveState();
 }
 
-function getImageDimensions(dataUrl, orientation) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      let width = img.naturalWidth;
-      let height = img.naturalHeight;
-      // EXIF orientations 5-8 swap width ↔ height
-      if (orientation >= 5 && orientation <= 8) {
-        [width, height] = [height, width];
+function redo() {
+  if (redoStack.length === 0) { showToast('Nothing to redo'); return; }
+  const action = redoStack.pop();
+  const p = pages[action.pageIdx];
+  undoStack.push({
+    pageIdx: action.pageIdx,
+    oldStatus: action.oldStatus,
+    newStatus: action.newStatus,
+    oldReplacement: p.replacementBytes,
+    oldType: p.replacementType,
+    oldName: p.replacementName,
+  });
+  p.status = action.newStatus;
+  p.replacementBytes = action.oldReplacement;
+  p.replacementType = action.oldType;
+  p.replacementName = action.oldName;
+  addHistory(action.pageIdx, 'Redo');
+  renderGrid();
+  updateToolbar();
+  saveState();
+}
+
+// ─── Export ───
+async function exportPDF() {
+  const replacedCount = pages.filter(p => p.status === 'replaced').length;
+  if (replacedCount === 0) { showToast('No pages replaced. Make some changes first.'); return; }
+
+  showProgress('Building corrected PDF...', 0);
+
+  try {
+    const { PDFDocument } = PDFLib;
+    const doc = await PDFDocument.load(originalBytes);
+    const totalPages = doc.getPageCount();
+
+    // Work backwards so indices don't shift
+    for (let i = pages.length - 1; i >= 0; i--) {
+      const p = pages[i];
+      if (p.status === 'replaced' && p.replacementBytes) {
+        const repDoc = await PDFDocument.load(p.replacementBytes);
+        const [repPage] = await doc.copyPages(repDoc, [0]);
+
+        // Remove original page at that position
+        doc.removePage(i);
+        // Insert replacement at same position
+        doc.insertPage(i, repPage);
+
+        progressBar.style.width = ((pages.length - i) / pages.length * 100) + '%';
+        progressText.textContent = `Replacing page ${p.num}...`;
       }
-      resolve({ width, height });
-    };
-    img.onerror = () => resolve({ width: 0, height: 0 });
-    img.src = dataUrl;
-  });
+    }
+
+    progressText.textContent = 'Saving...';
+    progressBar.style.width = '95%';
+
+    const pdfBytes = await doc.save();
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+
+    hideProgress();
+
+    // Generate filename
+    const timestamp = new Date().toISOString().slice(0,10);
+    const origName = document.querySelector('#uploadZonePdf input') ? 'corrected' : 'corrected';
+    const fileName = `corrected-${timestamp}.pdf`;
+
+    // Download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+
+    // Generate summary report
+    generateSummary();
+
+    showToast(`✅ PDF saved! ${replacedCount} page(s) corrected`);
+  } catch (e) {
+    hideProgress();
+    showToast('Error building PDF: ' + e.message);
+    console.error(e);
+  }
 }
 
-// ─── Render Grid ───
-function render() {
-  imageGrid.innerHTML = '';
-  const totalBytes = images.reduce((sum, img) => sum + img.file.size, 0);
+function generateSummary() {
+  const replaced = pages.filter(p => p.status === 'replaced');
+  const marked = pages.filter(p => p.status === 'marked');
+  const text = [
+    '═══ PDF Page Correction Summary ═══',
+    `Date: ${new Date().toLocaleString()}`,
+    `Total Pages: ${pages.length}`,
+    `Pages Corrected: ${replaced.length}`,
+    `Pages Marked (uncorrected): ${marked.length}`,
+    '',
+    'Replacements:',
+    ...replaced.map(p => `  Page ${p.num}: ${p.replacementName || 'Replacement'}`),
+    '',
+    'Edit History:',
+    ...historyLog.map(h => `  ${h.time}  Page ${h.page}  ${h.action}  ${h.source || ''}`),
+    '',
+  ].join('\n');
 
-  if (images.length === 0) {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `summary-${new Date().toISOString().slice(0,10)}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Render ───
+function renderGrid() {
+  thumbGrid.innerHTML = '';
+
+  if (pages.length === 0) {
     emptyState.style.display = 'block';
     toolbar.style.display = 'none';
-    generateBtn.style.display = 'none';
     return;
   }
 
   emptyState.style.display = 'none';
   toolbar.style.display = 'flex';
-  generateBtn.style.display = 'block';
-  imageCount.textContent = images.length;
-  totalSize.textContent = formatBytes(totalBytes);
 
-  images.forEach((img, idx) => {
+  pages.forEach((p, idx) => {
     const card = document.createElement('div');
-    card.className = 'image-card';
-    card.draggable = true;
+    card.className = `thumb-card${idx === selectedIdx ? ' selected' : ''}${p.status === 'marked' ? ' marked' : ''}${p.status === 'replaced' ? ' replaced' : ''}`;
     card.dataset.index = idx;
-    card.innerHTML = `
-      <img src="${img.dataUrl}" alt="Image ${idx + 1}" loading="lazy">
-      <span class="index">${idx + 1}</span>
-      <button class="remove-btn" onclick="event.stopPropagation(); removeImage(${img.id})" title="Remove">✕</button>
-      <div class="move-btns">
-        <button onclick="event.stopPropagation(); moveImage(${idx}, -1)" title="Move up" ${idx === 0 ? 'disabled' : ''}>▲</button>
-        <button onclick="event.stopPropagation(); moveImage(${idx}, 1)" title="Move down" ${idx === images.length - 1 ? 'disabled' : ''}>▼</button>
-      </div>
-    `;
 
-    // Drag events
-    card.addEventListener('dragstart', (e) => {
-      card.classList.add('dragging');
-      e.dataTransfer.setData('text/plain', idx.toString());
-      e.dataTransfer.effectAllowed = 'move';
-    });
-    card.addEventListener('dragend', () => {
-      card.classList.remove('dragging');
-      document.querySelectorAll('.image-card').forEach(c => c.classList.remove('drag-over'));
-    });
-    card.addEventListener('dragover', (e) => {
+    // Show thumbnail
+    const img = document.createElement('img');
+    img.src = p.thumbnailUrl;
+    img.alt = `Page ${p.num}`;
+    img.style.cssText = 'width:100%;height:100%;object-fit:contain;';
+    card.appendChild(img);
+
+    // Page number
+    const label = document.createElement('span');
+    label.className = 'page-num';
+    label.textContent = `P${p.num}`;
+    card.appendChild(label);
+
+    // Status badge
+    const badge = document.createElement('span');
+    badge.className = 'mark-badge';
+    badge.textContent = p.status === 'replaced' ? '✅' : '⚠';
+    card.appendChild(badge);
+
+    // Click to select
+    card.addEventListener('click', () => selectPage(idx));
+
+    // Drag-over for replacement drop
+    card.addEventListener('dragover', e => { e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave', () => card.classList.remove('drag-over'));
+    card.addEventListener('drop', e => {
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      card.classList.add('drag-over');
-    });
-    card.addEventListener('dragleave', () => {
       card.classList.remove('drag-over');
+      selectPage(idx);
+      const file = e.dataTransfer.files[0];
+      if (file) addReplacement(file);
     });
-    card.addEventListener('drop', (e) => {
-      e.preventDefault();
-      card.classList.remove('drag-over');
-      const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
-      const toIdx = idx;
-      if (fromIdx !== toIdx) {
-        const [moved] = images.splice(fromIdx, 1);
-        images.splice(toIdx, 0, moved);
-        render();
+
+    thumbGrid.appendChild(card);
+  });
+}
+
+function updateToolbar() {
+  pageCount.textContent = pages.length;
+  const marked = pages.filter(p => p.status === 'marked').length;
+  const replaced = pages.filter(p => p.status === 'replaced').length;
+  markCount.textContent = `${replaced} replaced${marked > 0 ? ', ' + marked + ' marked' : ''}`;
+  exportBtn.disabled = replaced === 0;
+
+  if (historyLog.length > 0) {
+    historyLogDiv.style.display = 'block';
+    historyEntries.innerHTML = historyLog.slice(-20).map(h =>
+      `<div class="entry${h.action === 'Undo' ? ' undo' : ''}">` +
+      `<span class="time">${h.time}</span> Page ${h.page}: ${h.action} ${h.source ? '- ' + h.source : ''}</div>`
+    ).join('');
+  }
+}
+
+function addHistory(pageIdx, action, source) {
+  const now = new Date().toLocaleTimeString('en-GB');
+  historyLog.push({ time: now, page: pages[pageIdx] ? pages[pageIdx].num : pageIdx + 1, action, source: source || '' });
+  if (historyLog.length > 200) historyLog.shift();
+}
+
+// ─── Autosave ───
+let autosaveTimer = null;
+function saveState() {
+  try {
+    const state = {
+      pages: pages.map(p => ({ num: p.num, status: p.status, replacementName: p.replacementName, replacementType: p.replacementType })),
+      historyLog: historyLog.slice(-50),
+      timestamp: Date.now(),
+    };
+    // Store replacements separately (too large for localStorage)
+    const replacements = {};
+    pages.forEach((p, i) => {
+      if (p.status === 'replaced' && p.replacementBytes) {
+        // Store as base64
+        replacements[i] = arrayBufferToBase64(p.replacementBytes);
       }
     });
-
-    imageGrid.appendChild(card);
-  });
-}
-
-// ─── Image Actions ───
-function removeImage(id) {
-  images = images.filter(img => img.id !== id);
-  render();
-  if (images.length === 0) {
-    showToast('All images removed');
+    localStorage.setItem('pdf-corrector-state', JSON.stringify(state));
+    localStorage.setItem('pdf-corrector-replacements', JSON.stringify(replacements));
+  } catch (e) {
+    // localStorage might be full — non-critical
   }
 }
 
-function moveImage(idx, direction) {
-  const newIdx = idx + direction;
-  if (newIdx < 0 || newIdx >= images.length) return;
-  const [moved] = images.splice(idx, 1);
-  images.splice(newIdx, 0, moved);
-  render();
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
 }
 
-function clearAll() {
-  if (images.length === 0) return;
-  if (confirm(`Remove all ${images.length} images?`)) {
-    images = [];
-    render();
-    showToast('All images cleared');
-  }
-}
-
-// ─── PDF Generation ───
-async function generatePDF() {
-  if (images.length === 0) {
-    showToast('Add some images first!');
-    return;
-  }
-
-  const { jsPDF } = window.jspdf;
-  const orientation = 'portrait';
-
-  // Page dimensions in mm
-  const pageDims = {
-    a4: { w: 210, h: 297 },
-    letter: { w: 215.9, h: 279.4 }
-  };
-  const page = pageDims[pageSize.value] || pageDims.a4;
-  const margin = 5; // mm margin on each side
-  const usableW = page.w - margin * 2;
-  const usableH = page.h - margin * 2;
-
-  const doc = new jsPDF({
-    orientation,
-    unit: 'mm',
-    format: pageSize.value
-  });
-
-  const total = images.length;
+// ─── Progress ───
+function showProgress(text, pct) {
   progressContainer.classList.add('active');
-  progressTotal.textContent = total;
-  progressBar.style.width = '0%';
+  progressText.textContent = text;
+  progressBar.style.width = pct + '%';
+}
 
-  // Process in chunks to avoid blocking UI
-  const CHUNK_SIZE = 10;
-  for (let i = 0; i < total; i++) {
-    if (i > 0) {
-      doc.addPage();
-    }
-
-    const img = images[i];
-    progressCurrent.textContent = i + 1;
-    progressStatus.textContent = `Adding "${img.file.name}"...`;
-    progressBar.style.width = ((i + 1) / total * 100) + '%';
-
-    try {
-      // Calculate dimensions to fit on page
-      const { width: imgW, height: imgH } = img;
-      if (imgW === 0 || imgH === 0) {
-        // Unknown dimensions — fit to full usable area
-        doc.addImage(img.dataUrl, 'JPEG', margin, margin, usableW, usableH);
-        continue;
-      }
-
-      const imgAspect = imgW / imgH;
-      const pageAspect = usableW / usableH;
-
-      let drawW, drawH, x, y;
-
-      if (fitMode.value === 'cover') {
-        // Cover: fill the page, cropping if needed
-        if (imgAspect > pageAspect) {
-          drawH = usableH;
-          drawW = drawH * imgAspect;
-        } else {
-          drawW = usableW;
-          drawH = drawW / imgAspect;
-        }
-        x = (page.w - drawW) / 2;
-        y = (page.h - drawH) / 2;
-      } else {
-        // Contain: fit entire image on page with margins
-        if (imgAspect > pageAspect) {
-          drawW = usableW;
-          drawH = drawW / imgAspect;
-        } else {
-          drawH = usableH;
-          drawW = drawH * imgAspect;
-        }
-        x = (page.w - drawW) / 2;
-        y = (page.h - drawH) / 2;
-      }
-
-      // Determine format from data URL
-      let format = 'JPEG';
-      if (img.dataUrl.startsWith('data:image/png')) format = 'PNG';
-      else if (img.dataUrl.startsWith('data:image/webp')) format = 'WEBP';
-
-      doc.addImage(img.dataUrl, format, x, y, drawW, drawH);
-
-    } catch (err) {
-      console.error(`Failed to add image ${i + 1}:`, err);
-      doc.setFontSize(10);
-      doc.setTextColor(255, 0, 0);
-      doc.text(`Error adding: ${img.file.name}`, margin, margin + 5);
-    }
-
-    // Yield to UI every chunk
-    if (i % CHUNK_SIZE === 0 && i > 0) {
-      await new Promise(r => setTimeout(r, 0));
-    }
-  }
-
-  // Save
-  progressStatus.textContent = 'Building PDF file...';
-  await new Promise(r => setTimeout(r, 100));
-
-  const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
-  doc.save(`images-${timestamp}.pdf`);
-
+function hideProgress() {
   progressContainer.classList.remove('active');
-  showToast(`✅ PDF saved! ${total} images, ${pageSize.value.toUpperCase()} format`);
 }
 
-// ─── Utilities ───
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
+// ─── Toast ───
 function showToast(message) {
   const existing = document.querySelector('.toast');
   if (existing) existing.remove();
-
   const toast = document.createElement('div');
   toast.className = 'toast';
   toast.textContent = message;
   document.body.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transition = 'opacity 0.3s';
-    setTimeout(() => toast.remove(), 300);
-  }, 2500);
+  setTimeout(() => { toast.style.opacity = '0'; toast.style.transition = 'opacity 0.3s'; setTimeout(() => toast.remove(), 300); }, 2500);
 }
 
 // ─── Keyboard shortcuts ───
-document.addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === 'o') {
-    e.preventDefault();
-    fileInput.click();
-  }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && images.length > 0) {
-    e.preventDefault();
-    generatePDF();
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+  if (e.key === 'Escape') {
+    previewOverlay.classList.remove('active');
+    pendingReplacement = null;
   }
 });
 
 // ─── Initial render ───
-render();
+renderGrid();
 </script>
 
 </body>
