@@ -449,7 +449,9 @@ async function addReplacement(file) {
       const cv = document.createElement('canvas');
       cv.width = img.naturalWidth; cv.height = img.naturalHeight;
       cv.getContext('2d').drawImage(img, 0, 0);
-      const blob = await new Promise(r => cv.toBlob(r, file.type, file.type === 'image/jpeg' ? 0.95 : undefined));
+      // Force JPEG for all non-PNG sources — canvas only supports image/jpeg and image/png
+      const outType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+      const blob = await new Promise(r => cv.toBlob(r, outType, outType === 'image/jpeg' ? 0.95 : undefined));
       replacementBytes = await blob.arrayBuffer();
     } catch (e) { /* fallback to raw bytes */ }
 
