@@ -97,6 +97,7 @@ header p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 .thumb-card:active { cursor: grabbing; }
 .thumb-card:hover { border-color: var(--accent); }
 .thumb-card.selected { border-color: var(--accent); box-shadow: 0 0 12px rgba(88,166,255,0.4); }
+.thumb-card.multi-selected { border-color: #a371f7; box-shadow: 0 0 8px rgba(163,113,247,0.3); }
 .thumb-card.marked { border-color: var(--danger); }
 .thumb-card.marked.selected { border-color: var(--warning); }
 .thumb-card.replaced { border-color: var(--success); }
@@ -108,6 +109,11 @@ header p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
   transition: background 0.15s, height 0.15s; flex-basis: 100%;
 }
 .drop-zone-between.drag-over { background: var(--accent); height: 20px; }
+/* Scroll view */
+.thumb-grid.scroll-view { flex-direction: column; }
+.thumb-grid.scroll-view .thumb-card { width: 100%; max-width: 500px; margin: 4px auto; aspect-ratio: auto; }
+.thumb-grid.scroll-view .thumb-card canvas { width: 100%; height: auto; }
+.thumb-grid.scroll-view .drop-zone-between { display: none; }
 .thumb-card canvas { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
 .thumb-card .page-num {
   position: absolute; top: 4px; left: 4px;
@@ -120,6 +126,11 @@ header p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 }
 .thumb-card.marked .mark-badge { display: block; color: var(--danger); font-size: 0.8rem; }
 .thumb-card.replaced .mark-badge { display: block; color: var(--success); font-size: 0.8rem; }
+.page-btn {
+  background: rgba(0,0,0,0.5); border: none; color: #fff; font-size: 0.65rem;
+  padding: 1px 4px; border-radius: 3px; cursor: pointer; line-height: 1;
+}
+.page-btn:hover { background: rgba(0,0,0,0.7); }
 
 /* Empty state */
 .empty-state { text-align: center; padding: 48px 16px; color: var(--muted); }
@@ -224,11 +235,15 @@ footer a { color: var(--accent); text-decoration: none; }
       <button class="btn btn-sm" onclick="zoomOut()" title="Zoom out">🔍−</button>
       <button class="btn btn-sm" onclick="zoomReset()" title="Reset zoom">100%</button>
       <button class="btn btn-sm" onclick="zoomIn()" title="Zoom in">🔍+</button>
+      <button class="btn btn-sm" id="viewToggleBtn" onclick="toggleView()">📖 Scroll</button>
       <button class="btn btn-sm" onclick="undo()" title="Undo (Ctrl+Z)">↩ Undo</button>
       <button class="btn btn-sm" onclick="redo()" title="Redo (Ctrl+Y)">↪ Redo</button>
       <button class="btn btn-sm" onclick="markSelected()">🏷 Mark Page</button>
       <button class="btn btn-sm" onclick="unmarkSelected()">✓ Unmark</button>
-      <span style="color:var(--muted);font-size:0.8rem;margin-left:4px">Go to:</span>
+      <button class="btn btn-sm" onclick="rotatePage(-90)" title="Rotate left">↺</button>
+      <button class="btn btn-sm" onclick="rotatePage(90)" title="Rotate right">↻</button>
+      <button class="btn btn-sm" onclick="toggleFullscreen()">🖥</button>
+      <span style="color:var(--muted);font-size:0.8rem">Go to:</span>
       <input type="number" id="jumpPageInput" min="1" value="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;text-align:center;font-size:0.8rem">
       <button class="btn btn-sm" onclick="jumpToPage()">Go</button>
       <button class="btn btn-primary btn-sm" id="exportBtn" disabled onclick="exportPDF()">📄 Export PDF</button>
@@ -307,6 +322,7 @@ let originalBytes = null;          // ArrayBuffer of original PDF
 let originalDoc = null;           // pdf.js document proxy
 let pages = [];                   // {num, status:'ok'|'marked'|'replaced', thumbnailUrl, replacementBytes, replacementType, replacementName}
 let selectedIdx = -1;             // currently selected page index
+let selectedIndices = new Set();  // multi-select for batch replacement
 let undoStack = [];               // [{type, pageIdx, oldStatus, oldReplacement, ...}]
 let redoStack = [];
 let historyLog = [];              // [{time, page, action, source, status}]
@@ -316,6 +332,7 @@ let originalFilename = null;      // set on PDF load
 let outputFilename = null;        // set on export
 let pdfPassword = null;           // stored password for protected PDFs
 let draggingIdx = -1;             // page index being dragged (reorder)
+let viewMode = 'grid';            // 'grid' or 'scroll'
 
 // ─── Zoom ───
 let zoomLevel = 0.3;
@@ -433,12 +450,21 @@ async function loadOriginalPDF(file) {
       }
     } else {
       hideProgress();
-      showToast('Failed to open PDF. It may be corrupted or password-protected.');
+      const retry = confirm('Failed to open PDF. The file may be corrupted or in an unsupported format.\n\nTry a different file?');
+      if (retry) { fileInputPdf.click(); }
       return;
     }
   }
 
   const total = originalDoc.numPages;
+  // Optimize mode for large PDFs
+  if (total > 200 || originalBytes.byteLength > 50 * 1024 * 1024) {
+    const useOpt = confirm(
+      `This is a large PDF (${total} pages, ${(originalBytes.byteLength/1e6).toFixed(1)}MB).\n\n` +
+      `Switch to Optimize Mode?\n• Lower-resolution thumbnails\n• Faster loading\n\nOK = Optimize  |  Cancel = Full quality`
+    );
+    if (useOpt) zoomLevel = 0.15;
+  }
   showProgress('Rendering thumbnails...', 0);
   pages = [];
   selectedIdx = -1;
@@ -462,6 +488,9 @@ async function loadOriginalPDF(file) {
       replacementBytes: null,
       replacementType: null,
       replacementName: null,
+      rotation: 0,
+      bookmarked: false,
+      comment: '',
       // original dims for pdf-lib
       origWidth: pageProxy.view[2],
       origHeight: pageProxy.view[3],
@@ -487,9 +516,38 @@ function jumpToPage() {
   if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
+function toggleView() {
+  viewMode = viewMode === 'grid' ? 'scroll' : 'grid';
+  thumbGrid.classList.toggle('scroll-view', viewMode === 'scroll');
+  document.getElementById('viewToggleBtn').textContent = viewMode === 'grid' ? '📖 Scroll' : '🔲 Grid';
+  if (viewMode === 'scroll') {
+    zoomLevel = 1.0;
+    rerenderAllThumbnails();
+  } else {
+    zoomLevel = 0.3;
+    rerenderAllThumbnails();
+  }
+  renderGrid();
+}
+
 // ─── Click to select a page for replacement ───
-function selectPage(idx) {
-  selectedIdx = idx;
+function selectPage(idx, e) {
+  if (e && (e.ctrlKey || e.metaKey)) {
+    // Ctrl+click: toggle in multi-select
+    if (selectedIndices.has(idx)) selectedIndices.delete(idx);
+    else selectedIndices.add(idx);
+    selectedIdx = idx;
+  } else if (e && e.shiftKey && selectedIdx >= 0) {
+    // Shift+click: range select from selectedIdx to idx
+    selectedIndices = new Set();
+    const start = Math.min(selectedIdx, idx);
+    const end = Math.max(selectedIdx, idx);
+    for (let i = start; i <= end; i++) selectedIndices.add(i);
+  } else {
+    // Normal click: single select
+    selectedIdx = idx;
+    selectedIndices = new Set([idx]);
+  }
   renderGrid();
   if (idx >= 0 && idx < pages.length && pages[idx].status !== 'replaced') {
     replaceZone.classList.add('active');
@@ -558,6 +616,43 @@ async function enhanceImage(replacementBytes, canvas) {
   });
   return await blob.arrayBuffer();
 }
+// ─── Bookmark ───
+function toggleBookmark(idx) {
+  pages[idx].bookmarked = !pages[idx].bookmarked;
+  renderGrid();
+  saveState();
+}
+
+// ─── Comment ───
+function openComment(idx) {
+  const p = pages[idx];
+  const note = prompt(`Note for Page ${p.num}:`, p.comment || '');
+  if (note !== null) {
+    p.comment = note;
+    saveState();
+    showToast(note ? 'Note saved' : 'Note cleared');
+  }
+}
+
+// ─── Fullscreen ───
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+}
+
+// ─── Rotate ───
+function rotatePage(deg) {
+  if (selectedIdx < 0) { showToast('Select a page first'); return; }
+  const p = pages[selectedIdx];
+  p.rotation = (p.rotation + deg) % 360;
+  if (p.rotation < 0) p.rotation += 360;
+  rerenderAllThumbnails();
+  saveState();
+}
+
 async function convertTIFFToJPEG(arrayBuffer) {
   const bytes = new Uint8Array(arrayBuffer);
   const ifds = UTIF.decode(bytes);
@@ -717,14 +812,23 @@ async function showPreview() {
 }
 
 function confirmReplace() {
-  const p = pages[selectedIdx];
-  pushUndo(selectedIdx, p.status, 'replaced');
-  p.status = 'replaced';
-  p.replacementBytes = pendingReplacement.bytes;
-  p.replacementType = pendingReplacement.type;
-  p.replacementName = pendingReplacement.name;
-  addHistory(selectedIdx, `Replaced with ${pendingReplacement.name}`);
+  const targets = selectedIndices.size > 1 
+    ? [...selectedIndices].filter(i => pages[i].status !== 'replaced')
+    : [selectedIdx];
+  if (targets.length === 0) { cancelReplace(); return; }
+  
+  for (const idx of targets) {
+    const p = pages[idx];
+    if (p.status === 'replaced') continue;
+    pushUndo(idx, p.status, 'replaced');
+    p.status = 'replaced';
+    p.replacementBytes = pendingReplacement.bytes.slice(0);
+    p.replacementType = pendingReplacement.type;
+    p.replacementName = pendingReplacement.name;
+    addHistory(idx, `Replaced with ${pendingReplacement.name}`);
+  }
   pendingReplacement = null;
+  selectedIndices = new Set();
   previewOverlay.classList.remove('active');
   replaceZone.classList.remove('active');
   renderGrid();
@@ -1060,7 +1164,7 @@ function renderGrid() {
 
   pages.forEach((p, idx) => {
     const card = document.createElement('div');
-    card.className = `thumb-card${idx === selectedIdx ? ' selected' : ''}${p.status === 'marked' ? ' marked' : ''}${p.status === 'replaced' ? ' replaced' : ''}`;
+    card.className = `thumb-card${idx === selectedIdx ? ' selected' : ''}${selectedIndices.has(idx) && idx !== selectedIdx ? ' multi-selected' : ''}${p.status === 'marked' ? ' marked' : ''}${p.status === 'replaced' ? ' replaced' : ''}`;
     card.dataset.index = idx;
     card.draggable = true;
 
@@ -1083,9 +1187,26 @@ function renderGrid() {
     badge.textContent = p.status === 'replaced' ? '✅' : '⚠';
     card.appendChild(badge);
 
+    // Comment + Bookmark buttons (top-right)
+    const btnRow = document.createElement('div');
+    btnRow.style.cssText = 'position:absolute;top:4px;right:20px;display:flex;gap:2px;pointer-events:auto;z-index:5';
+    const bmBtn = document.createElement('button');
+    bmBtn.className = 'page-btn';
+    bmBtn.textContent = p.bookmarked ? '⭐' : '☆';
+    bmBtn.title = 'Bookmark';
+    bmBtn.addEventListener('click', e => { e.stopPropagation(); toggleBookmark(idx); });
+    const cmBtn = document.createElement('button');
+    cmBtn.className = 'page-btn';
+    cmBtn.textContent = '💬';
+    cmBtn.title = 'Add note';
+    cmBtn.addEventListener('click', e => { e.stopPropagation(); openComment(idx); });
+    btnRow.appendChild(bmBtn);
+    btnRow.appendChild(cmBtn);
+    card.appendChild(btnRow);
+
     // Click to select
     card.addEventListener('click', e => {
-      if (!e.defaultPrevented) selectPage(idx);
+      if (!e.defaultPrevented) selectPage(idx, e);
     });
 
     // Drag start — mark as dragging
@@ -1306,6 +1427,9 @@ async function resumeSession() {
         replacementBytes: replacements[i] ? base64ToArrayBuffer(replacements[i]) : null,
         replacementType: saved ? saved.replacementType : null,
         replacementName: saved ? saved.replacementName : null,
+        rotation: saved ? (saved.rotation || 0) : 0,
+        bookmarked: saved ? !!saved.bookmarked : false,
+        comment: saved ? (saved.comment || '') : '',
         origWidth: pageProxy.view[2],
         origHeight: pageProxy.view[3],
       });
