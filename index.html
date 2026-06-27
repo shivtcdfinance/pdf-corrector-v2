@@ -211,10 +211,16 @@ footer a { color: var(--accent); text-decoration: none; }
   <div class="toolbar" id="toolbar" style="display:none">
     <div class="stats"><strong id="pageCount">0</strong> pages · <span id="markCount">0</span> marked</div>
     <div class="actions">
+      <button class="btn btn-sm" onclick="zoomOut()" title="Zoom out">🔍−</button>
+      <button class="btn btn-sm" onclick="zoomReset()" title="Reset zoom">100%</button>
+      <button class="btn btn-sm" onclick="zoomIn()" title="Zoom in">🔍+</button>
       <button class="btn btn-sm" onclick="undo()" title="Undo (Ctrl+Z)">↩ Undo</button>
       <button class="btn btn-sm" onclick="redo()" title="Redo (Ctrl+Y)">↪ Redo</button>
       <button class="btn btn-sm" onclick="markSelected()">🏷 Mark Page</button>
       <button class="btn btn-sm" onclick="unmarkSelected()">✓ Unmark</button>
+      <span style="color:var(--muted);font-size:0.8rem;margin-left:4px">Go to:</span>
+      <input type="number" id="jumpPageInput" min="1" value="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;text-align:center;font-size:0.8rem">
+      <button class="btn btn-sm" onclick="jumpToPage()">Go</button>
       <button class="btn btn-primary btn-sm" id="exportBtn" disabled onclick="exportPDF()">📄 Export PDF</button>
     </div>
   </div>
@@ -246,6 +252,7 @@ footer a { color: var(--accent); text-decoration: none; }
       <div class="preview-actions">
         <button class="btn btn-success" onclick="confirmReplace()">✓ Confirm</button>
         <button class="btn btn-danger" onclick="cancelReplace()">✕ Cancel</button>
+        <button class="btn btn-sm" onclick="replaceAgain()">🔄 Try Different File</button>
       </div>
     </div>
   </div>
@@ -279,6 +286,46 @@ let undoStack = [];               // [{type, pageIdx, oldStatus, oldReplacement,
 let redoStack = [];
 let historyLog = [];              // [{time, page, action, source, status}]
 let pendingReplacement = null;    // {bytes, type, name} — awaiting confirmation
+let sessionStart = performance.now();  // for elapsed time tracking
+let originalFilename = null;      // set on PDF load
+let outputFilename = null;        // set on export
+let pdfPassword = null;           // stored password for protected PDFs
+
+// ─── Zoom ───
+let zoomLevel = 0.3;
+const ZOOM_STEPS = [0.15, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0];
+
+function zoomIn() {
+  const i = ZOOM_STEPS.indexOf(zoomLevel);
+  if (i < ZOOM_STEPS.length - 1) { zoomLevel = ZOOM_STEPS[i + 1]; rerenderAllThumbnails(); }
+}
+function zoomOut() {
+  const i = ZOOM_STEPS.indexOf(zoomLevel);
+  if (i > 0) { zoomLevel = ZOOM_STEPS[i - 1]; rerenderAllThumbnails(); }
+}
+function zoomReset() { zoomLevel = 0.3; rerenderAllThumbnails(); }
+
+async function rerenderAllThumbnails() {
+  if (pages.length === 0) return;
+  showProgress('Rendering thumbnails...', 0);
+  for (let i = 0; i < pages.length; i++) {
+    const p = pages[i];
+    const sourceBytes = p.status === 'replaced' && p.replacementBytes ? p.replacementBytes : originalBytes;
+    const pageNum = p.status === 'replaced' ? 1 : p.num;
+    try {
+      const doc = await pdfjsLib.getDocument({ data: sourceBytes.slice(0) }).promise;
+      const pg = await doc.getPage(pageNum);
+      const vp = pg.getViewport({ scale: zoomLevel });
+      const cv = document.createElement('canvas');
+      cv.width = vp.width; cv.height = vp.height;
+      await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      p.thumbnailUrl = cv.toDataURL();
+    } catch (e) { /* keep old thumbnail */ }
+    progressBar.style.width = ((i + 1) / pages.length * 100) + '%';
+  }
+  hideProgress();
+  renderGrid();
+}
 
 // ─── DOM refs ───
 const uploadZonePdf = document.getElementById('uploadZonePdf');
@@ -331,13 +378,38 @@ async function loadOriginalPDF(file) {
   showProgress('Loading PDF...', 0);
   const ab = await file.arrayBuffer();
   originalBytes = ab;
+  originalFilename = file.name;
 
   try {
-    originalDoc = await pdfjsLib.getDocument({ data: ab.slice(0) }).promise;
+    originalDoc = await pdfjsLib.getDocument({ data: ab.slice(0), password: pdfPassword || undefined }).promise;
   } catch (e) {
-    showToast('Failed to open PDF. It may be corrupted or password-protected.');
-    hideProgress();
-    return;
+    if (e.name === 'PasswordException') {
+      const pw = prompt('This PDF is password-protected. Enter password:');
+      if (pw === null || pw === '') {
+        hideProgress();
+        showToast('Password required to open this PDF');
+        return;
+      }
+      pdfPassword = pw;
+      hideProgress();
+      showProgress('Retrying with password...', 30);
+      try {
+        originalDoc = await pdfjsLib.getDocument({ data: ab.slice(0), password: pw }).promise;
+      } catch (e2) {
+        hideProgress();
+        pdfPassword = null;
+        if (e2.name === 'PasswordException') {
+          showToast('Incorrect password. Try again with a different file.');
+        } else {
+          showToast('Failed to open PDF. It may be corrupted.');
+        }
+        return;
+      }
+    } else {
+      hideProgress();
+      showToast('Failed to open PDF. It may be corrupted or password-protected.');
+      return;
+    }
   }
 
   const total = originalDoc.numPages;
@@ -350,7 +422,7 @@ async function loadOriginalPDF(file) {
 
   for (let i = 1; i <= total; i++) {
     const pageProxy = await originalDoc.getPage(i);
-    const viewport = pageProxy.getViewport({ scale: 0.3 });
+    const viewport = pageProxy.getViewport({ scale: zoomLevel });
     const canvas = document.createElement('canvas');
     canvas.width = viewport.width;
     canvas.height = viewport.height;
@@ -374,9 +446,19 @@ async function loadOriginalPDF(file) {
   }
 
   hideProgress();
+  document.getElementById('jumpPageInput').max = total;
   renderGrid();
   updateToolbar();
   showToast(`Loaded ${total} pages`);
+}
+
+// ─── Jump to page ───
+function jumpToPage() {
+  const n = parseInt(document.getElementById('jumpPageInput').value);
+  if (isNaN(n) || n < 1 || n > pages.length) { showToast(`Enter a page number between 1 and ${pages.length}`); return; }
+  selectPage(n - 1);
+  const card = document.querySelector(`.thumb-card[data-index="${n-1}"]`);
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // ─── Click to select a page for replacement ───
@@ -553,6 +635,21 @@ function cancelReplace() {
   previewOverlay.classList.remove('active');
 }
 
+function replaceAgain() {
+  pendingReplacement = null;
+  // Clear canvases
+  const ctxO = previewOriginal.getContext('2d');
+  ctxO.clearRect(0, 0, previewOriginal.width, previewOriginal.height);
+  const ctxR = previewReplacement.getContext('2d');
+  ctxR.clearRect(0, 0, previewReplacement.width, previewReplacement.height);
+  // Remove stale dimension warning
+  const warn = document.getElementById('dimensionWarning');
+  if (warn) warn.remove();
+  // Re-trigger file picker
+  fileReplace.value = '';
+  fileReplace.click();
+}
+
 // ─── Undo / Redo ───
 function pushUndo(idx, oldStatus, newStatus, oldReplacement, oldType, oldName) {
   undoStack.push({ pageIdx: idx, oldStatus, newStatus, oldReplacement, oldType, oldName });
@@ -613,7 +710,7 @@ async function exportPDF() {
 
   try {
     const { PDFDocument } = PDFLib;
-    const doc = await PDFDocument.load(originalBytes);
+    const doc = await PDFDocument.load(originalBytes, pdfPassword ? { password: pdfPassword } : {});
     const totalPages = doc.getPageCount();
 
     // Work backwards so indices don't shift
@@ -647,6 +744,7 @@ async function exportPDF() {
     const userInput = prompt('Save corrected PDF as:', defaultName);
     const fileName = (userInput && userInput.trim()) ? userInput.trim() : defaultName;
     if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
+    outputFilename = fileName;
 
     // Download PDF
     const url = URL.createObjectURL(blob);
@@ -660,8 +758,8 @@ async function exportPDF() {
     // Delay cleanup to ensure download starts
     setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-    // Generate summary report — delayed so browser doesn't block it as duplicate popup
-    setTimeout(() => generateSummary(), 1500);
+    // Generate summary reports — sequenced to avoid popup blocker
+    setTimeout(() => { generateSummary(); setTimeout(generateSummaryCSV, 1500); }, 1500);
 
     showToast(`✅ PDF saved! ${replacedCount} page(s) corrected`);
   } catch (e) {
@@ -674,12 +772,20 @@ async function exportPDF() {
 function generateSummary() {
   const replaced = pages.filter(p => p.status === 'replaced');
   const marked = pages.filter(p => p.status === 'marked');
+  const undoCount = historyLog.filter(h => h.action === 'Undo').length;
+  const redoCount = historyLog.filter(h => h.action === 'Redo').length;
   const text = [
     '═══ PDF Page Correction Summary ═══',
+    `Original File: ${originalFilename || 'Unknown'}`,
+    `Output File: ${outputFilename || 'N/A'}`,
     `Date: ${new Date().toLocaleString()}`,
     `Total Pages: ${pages.length}`,
     `Pages Corrected: ${replaced.length}`,
     `Pages Marked (uncorrected): ${marked.length}`,
+    `Total Replacements: ${historyLog.filter(h => h.action.includes('Replaced')).length}`,
+    `Undo Operations: ${undoCount}`,
+    `Redo Operations: ${redoCount}`,
+    `Elapsed Time: ${formatElapsed()}`,
     '',
     'Replacements:',
     ...replaced.map(p => `  Page ${p.num}: ${p.replacementName || 'Replacement'}`),
@@ -694,8 +800,49 @@ function generateSummary() {
   const a = document.createElement('a');
   a.href = url;
   a.download = `summary-${new Date().toISOString().slice(0,10)}.txt`;
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function formatElapsed() {
+  const seconds = Math.round((performance.now() - sessionStart) / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins < 60) return `${mins}m ${secs}s`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ${mins % 60}m ${secs}s`;
+}
+
+function generateSummaryCSV() {
+  const header = [
+    ['Original File', originalFilename || 'Unknown'],
+    ['Output File', outputFilename || 'N/A'],
+    ['Date', new Date().toLocaleString()],
+    ['Total Pages', pages.length],
+    ['Pages Corrected', pages.filter(p => p.status === 'replaced').length],
+    ['Total Replacements', historyLog.filter(h => h.action.includes('Replaced')).length],
+    ['Undo Operations', historyLog.filter(h => h.action === 'Undo').length],
+    ['Redo Operations', historyLog.filter(h => h.action === 'Redo').length],
+    ['Elapsed Time', formatElapsed()],
+    ['']
+  ].map(r => r.join(','));
+  const cols = ['Page No', 'Action', 'Source', 'Status'];
+  const rows = historyLog.map(h =>
+    [h.page, h.action, h.source || '', h.status || ''].map(v => `"${v}"`).join(',')
+  );
+  const csv = [...header, cols.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `summary-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ─── Render ───
@@ -777,6 +924,7 @@ function addHistory(pageIdx, action, source) {
 
 // ─── Autosave ───
 let autosaveTimer = null;
+let autosaveFailCount = 0;
 function saveState() {
   try {
     const state = {
@@ -796,7 +944,20 @@ function saveState() {
     if (originalBytes) {
       localStorage.setItem('pdf-corrector-original', arrayBufferToBase64(originalBytes));
     }
-  } catch (e) { /* localStorage might be full */ }
+    autosaveFailCount = 0; // reset on success
+  } catch (e) {
+    autosaveFailCount++;
+    if (autosaveFailCount === 1) {
+      showToast('⚠️ Autosave failed — retrying…');
+      setTimeout(() => saveState(), 3000);
+    } else if (autosaveFailCount === 2) {
+      showToast('⚠️ Autosave retrying (2/3)…');
+      setTimeout(() => saveState(), 3000);
+    } else {
+      showToast('❌ Autosave disabled after repeated failures. Check storage space.');
+      console.warn('Autosave disabled:', e.message || e);
+    }
+  }
 }
 
 function loadState() {
@@ -829,7 +990,7 @@ async function resumeSession() {
     for (let i = 0; i < total; i++) {
       const saved = state.pages[i];
       const pageProxy = await originalDoc.getPage(i + 1);
-      const viewport = pageProxy.getViewport({ scale: 0.3 });
+      const viewport = pageProxy.getViewport({ scale: zoomLevel });
       const canvas = document.createElement('canvas');
       canvas.width = viewport.width;
       canvas.height = viewport.height;
@@ -850,6 +1011,7 @@ async function resumeSession() {
     
     historyLog = state.historyLog || [];
     hideProgress();
+    document.getElementById('jumpPageInput').max = total;
     renderGrid();
     updateToolbar();
     showToast(`Session restored — ${total} pages, ${pages.filter(p=>p.status==='replaced').length} replaced`);
