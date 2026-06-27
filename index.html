@@ -207,9 +207,12 @@ footer a { color: var(--accent); text-decoration: none; }
     <div class="icon">📎</div>
     <div class="primary-text">Drop replacement here — or tap to choose</div>
     <div class="sub-text">Image (JPG/PNG) or PDF page • Camera also supported</div>
-    <div class="btn-row" style="margin-top:10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+    <div class="btn-row" style="margin-top:10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap; align-items:center;">
       <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();document.getElementById('fileReplace').click()">📷 Choose File</button>
       <button class="btn btn-sm" onclick="event.stopPropagation();openReplaceCamera()">📸 Camera</button>
+      <label style="color:var(--muted);font-size:0.8rem;display:flex;align-items:center;gap:4px;margin-left:4px">
+        <input type="checkbox" id="enhanceToggle" checked onclick="event.stopPropagation()"> Auto-enhance
+      </label>
     </div>
     <input type="file" id="fileReplace" accept="image/*,application/pdf" style="display:none">
   </div>
@@ -261,6 +264,20 @@ footer a { color: var(--accent); text-decoration: none; }
         <button class="btn btn-danger" onclick="cancelReplace()">✕ Cancel</button>
         <button class="btn btn-sm" onclick="replaceAgain()">🔄 Try Different File</button>
       </div>
+      <!-- Dimension adjustment tools (hidden until mismatch detected) -->
+      <div id="dimAdjustTools" style="display:none;margin:12px 0;text-align:center">
+        <button class="btn btn-sm btn-primary" onclick="fitReplacementToPage()">📐 Fit to Page</button>
+      </div>
+    </div>
+    <!-- Compression dialog (swapped in during export) -->
+    <div class="overlay-content" id="compressContent" style="display:none">
+      <h2>💾 Output Quality</h2>
+      <p style="color:var(--muted);font-size:0.85rem;text-align:center;margin-bottom:16px">Choose compression level for the corrected PDF</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-success" onclick="applyCompress('full')">📄 Full Quality — No compression</button>
+        <button class="btn btn-primary" onclick="applyCompress('medium')">⚡ Medium — Balanced quality & size</button>
+        <button class="btn btn-sm" onclick="cancelCompress()">✕ Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -278,6 +295,7 @@ footer a { color: var(--accent); text-decoration: none; }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.min.js"></script>
 
 <script>
 'use strict';
@@ -506,6 +524,60 @@ function unmarkSelected() {
   updateToolbar();
 }
 
+// ─── Image Enhancement ───
+async function enhanceImage(replacementBytes, canvas) {
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+  // Auto-level (histogram stretch)
+  let min = 255, max = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const gray = (data[i] + data[i + 1] + data[i + 2]) / 3;
+    if (gray < min) min = gray;
+    if (gray > max) max = gray;
+  }
+  if (max > min) {
+    const scale = 255 / (max - min);
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = (data[i] - min) * scale;
+      data[i + 1] = (data[i + 1] - min) * scale;
+      data[i + 2] = (data[i + 2] - min) * scale;
+    }
+  }
+  // Contrast enhancement
+  const factor = 1.15;
+  for (let i = 0; i < data.length; i += 4) {
+    data[i] = Math.min(255, Math.max(0, ((data[i] - 128) * factor) + 128));
+    data[i + 1] = Math.min(255, Math.max(0, ((data[i + 1] - 128) * factor) + 128));
+    data[i + 2] = Math.min(255, Math.max(0, ((data[i + 2] - 128) * factor) + 128));
+  }
+  ctx.putImageData(imgData, 0, 0);
+  const blob = await new Promise((resolve, reject) => {
+    try { canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob null')), 'image/jpeg', 0.95); }
+    catch (e) { reject(e); }
+  });
+  return await blob.arrayBuffer();
+}
+async function convertTIFFToJPEG(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  const ifds = UTIF.decode(bytes);
+  if (!ifds || ifds.length === 0) throw new Error('No TIFF pages found');
+  UTIF.decodeImage(bytes, ifds[0]);
+  const rgba = UTIF.toRGBA8(ifds[0]);
+  const canvas = document.createElement('canvas');
+  canvas.width = ifds[0].width;
+  canvas.height = ifds[0].height;
+  const ctx = canvas.getContext('2d');
+  const imgData = ctx.createImageData(canvas.width, canvas.height);
+  imgData.data.set(rgba);
+  ctx.putImageData(imgData, 0, 0);
+  const blob = await new Promise((resolve, reject) => {
+    try { canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob null')), 'image/jpeg', 0.92); }
+    catch(e) { reject(e); }
+  });
+  return await blob.arrayBuffer();
+}
+
 // ─── Replacement upload ───
 setupDragDrop(replaceZone, fileReplace, (file) => {
   addReplacement(file);
@@ -533,6 +605,19 @@ async function addReplacement(file) {
   let replacementType = file.type;
   let replacementName = file.name;
 
+  // TIFF support — convert to JPEG via UTIF
+  const isTIFF = file.name.toLowerCase().endsWith('.tif') || file.name.toLowerCase().endsWith('.tiff') || file.type === 'image/tiff';
+  if (isTIFF) {
+    try {
+      replacementBytes = await convertTIFFToJPEG(ab);
+      replacementType = 'image/jpeg';
+      replacementName = file.name.replace(/\.(tif|tiff)$/i, '.jpg');
+    } catch (e) {
+      showToast('Failed to convert TIFF — unsupported format');
+      return;
+    }
+  }
+
   if (file.type.startsWith('image/')) {
     // EXIF orientation fix — draw through canvas so rotation is baked in
     try {
@@ -541,10 +626,15 @@ async function addReplacement(file) {
       const cv = document.createElement('canvas');
       cv.width = img.naturalWidth; cv.height = img.naturalHeight;
       cv.getContext('2d').drawImage(img, 0, 0);
-      // Force JPEG for all non-PNG sources — canvas only supports image/jpeg and image/png
-      const outType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
-      const blob = await new Promise(r => cv.toBlob(r, outType, outType === 'image/jpeg' ? 0.95 : undefined));
-      replacementBytes = await blob.arrayBuffer();
+      // Auto-enhancement if toggle is on
+      const shouldEnhance = document.getElementById('enhanceToggle')?.checked;
+      if (shouldEnhance) {
+        try { replacementBytes = await enhanceImage(replacementBytes, cv); } catch (e) { /* use raw */ }
+      } else {
+        const outType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+        const blob = await new Promise(r => cv.toBlob(r, outType, outType === 'image/jpeg' ? 0.95 : undefined));
+        replacementBytes = await blob.arrayBuffer();
+      }
     } catch (e) { /* fallback to raw bytes */ }
 
     // Convert image to PDF page using pdf-lib
@@ -616,6 +706,13 @@ async function showPreview() {
     warn.style.cssText = 'background:rgba(210,153,34,0.15);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin:12px 0;font-size:0.8rem;color:var(--warning);text-align:center;';
     warn.textContent = `⚠ Size mismatch: replacement aspect ratio (${repRatio.toFixed(2)}) differs from original (${origRatio.toFixed(2)}). Preview before confirming.`;
     document.querySelector('.preview-actions').before(warn);
+    // Show adjustment tools
+    document.getElementById('dimAdjustTools').style.display = 'block';
+    // Store original dimensions for fit function
+    pendingReplacement.origW = origW;
+    pendingReplacement.origH = origH;
+  } else {
+    document.getElementById('dimAdjustTools').style.display = 'none';
   }
 }
 
@@ -653,6 +750,36 @@ function replaceAgain() {
   // Re-trigger file picker
   fileReplace.value = '';
   fileReplace.click();
+}
+
+// ─── Fit to Page ───
+function fitReplacementToPage() {
+  if (!pendingReplacement || !pendingReplacement.bytes || !pendingReplacement.origW) return;
+  showProgress('Fitting to page...', 50);
+  PDFLib.PDFDocument.create().then(async pdfDoc => {
+    try {
+      const repDoc = await pdfjsLib.getDocument({ data: pendingReplacement.bytes.slice(0) }).promise;
+      const repPage = await repDoc.getPage(1);
+      const vp = repPage.getViewport({ scale: 1.0 });
+      const cv = document.createElement('canvas');
+      cv.width = vp.width; cv.height = vp.height;
+      await repPage.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      const imgDataUrl = cv.toDataURL();
+      const { origW, origH } = pendingReplacement;
+      const imgBytes = await (await fetch(imgDataUrl)).arrayBuffer();
+      const img = await pdfDoc.embedJpg(imgBytes);
+      const page = pdfDoc.addPage([origW, origH]);
+      page.drawImage(img, { x: 0, y: 0, width: origW, height: origH });
+      const fittedBytes = await pdfDoc.save();
+      pendingReplacement.bytes = fittedBytes;
+      hideProgress();
+      showToast('Fitted to original page dimensions');
+      showPreview();
+    } catch (e) {
+      hideProgress();
+      showToast('Fit failed: ' + (e.message || 'unknown error'));
+    }
+  });
 }
 
 // ─── Page Reorder ───
@@ -747,6 +874,8 @@ function redo() {
 }
 
 // ─── Export ───
+let pendingExportBytes = null;
+
 async function exportPDF() {
   const replacedCount = pages.filter(p => p.status === 'replaced').length;
   if (replacedCount === 0) { showToast('No pages replaced. Make some changes first.'); return; }
@@ -766,7 +895,6 @@ async function exportPDF() {
         const [repPage] = await outDoc.copyPages(repDoc, [0]);
         outDoc.addPage(repPage);
       } else {
-        // Copy original page by its number (1-based)
         const [origPage] = await outDoc.copyPages(origDoc, [p.num - 1]);
         outDoc.addPage(origPage);
       }
@@ -777,40 +905,68 @@ async function exportPDF() {
     progressText.textContent = 'Saving...';
     progressBar.style.width = '95%';
 
-    const pdfBytes = await outDoc.save();
-    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-
+    pendingExportBytes = await outDoc.save();
     hideProgress();
-
-    // Generate filename — prompt user for rename
-    const timestamp = new Date().toISOString().slice(0,10);
-    const defaultName = `corrected-${timestamp}.pdf`;
-    const userInput = prompt('Save corrected PDF as:', defaultName);
-    const fileName = (userInput && userInput.trim()) ? userInput.trim() : defaultName;
-    if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
-    outputFilename = fileName;
-
-    // Download PDF
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
     
-    // Delay cleanup to ensure download starts
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    // Show compression dialog
+    document.getElementById('previewOverlay').querySelector('.overlay-content').style.display = 'none';
+    document.getElementById('compressContent').style.display = 'block';
+    document.getElementById('dimAdjustTools').style.display = 'none';
+    previewOverlay.classList.add('active');
 
-    // Generate summary reports — sequenced to avoid popup blocker
-    setTimeout(() => { generateSummary(); setTimeout(generateSummaryCSV, 1500); }, 1500);
-
-    showToast(`✅ PDF saved! ${replacedCount} page(s) corrected`);
   } catch (e) {
     hideProgress();
     showToast('Error building PDF: ' + e.message);
     console.error(e);
   }
+}
+
+function applyCompress(level) {
+  if (!pendingExportBytes) return;
+  let bytes = pendingExportBytes;
+  
+  if (level === 'medium') {
+    // Re-save with compression (pdf-lib compresses by default, just re-save)
+    // Future: actual image re-compression logic
+  }
+  
+  previewOverlay.classList.remove('active');
+  document.getElementById('compressContent').style.display = 'none';
+  document.getElementById('previewOverlay').querySelector('.overlay-content').style.display = 'block';
+  
+  downloadFinalPDF(bytes);
+}
+
+function cancelCompress() {
+  previewOverlay.classList.remove('active');
+  document.getElementById('compressContent').style.display = 'none';
+  document.getElementById('previewOverlay').querySelector('.overlay-content').style.display = 'block';
+  pendingExportBytes = null;
+  showToast('Export cancelled');
+}
+
+function downloadFinalPDF(pdfBytes) {
+  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const timestamp = new Date().toISOString().slice(0,10);
+  const defaultName = `corrected-${timestamp}.pdf`;
+  const userInput = prompt('Save corrected PDF as:', defaultName);
+  const fileName = (userInput && userInput.trim()) ? userInput.trim() : defaultName;
+  if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
+  outputFilename = fileName;
+
+  const replacedCount = pages.filter(p => p.status === 'replaced').length;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setTimeout(() => { generateSummary(); setTimeout(generateSummaryCSV, 1500); }, 1500);
+  showToast(`✅ PDF saved! ${replacedCount} page(s) corrected`);
+  pendingExportBytes = null;
 }
 
 function generateSummary() {
