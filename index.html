@@ -243,6 +243,9 @@ footer a { color: var(--accent); text-decoration: none; }
       <button class="btn btn-sm" onclick="rotatePage(-90)" title="Rotate left">↺</button>
       <button class="btn btn-sm" onclick="rotatePage(90)" title="Rotate right">↻</button>
       <button class="btn btn-sm" onclick="toggleFullscreen()">🖥</button>
+      <button class="btn btn-sm" onclick="saveProject()" title="Save project">💾</button>
+      <button class="btn btn-sm" onclick="document.getElementById('projectInput').click()" title="Open project">📂</button>
+      <input type="file" id="projectInput" accept=".pprj,application/json" style="display:none">
       <span style="color:var(--muted);font-size:0.8rem">Go to:</span>
       <input type="number" id="jumpPageInput" min="1" value="1" style="width:50px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 6px;text-align:center;font-size:0.8rem">
       <button class="btn btn-sm" onclick="jumpToPage()">Go</button>
@@ -286,11 +289,17 @@ footer a { color: var(--accent); text-decoration: none; }
     </div>
     <!-- Compression dialog (swapped in during export) -->
     <div class="overlay-content" id="compressContent" style="display:none">
-      <h2>💾 Output Quality</h2>
-      <p style="color:var(--muted);font-size:0.85rem;text-align:center;margin-bottom:16px">Choose compression level for the corrected PDF</p>
+      <h2>💾 Export Options</h2>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn btn-success" onclick="applyCompress('full')">📄 Full Quality — No compression</button>
-        <button class="btn btn-primary" onclick="applyCompress('medium')">⚡ Medium — Balanced quality & size</button>
+        <button class="btn btn-success" onclick="applyCompress('full')">📄 Full Quality</button>
+        <button class="btn btn-primary" onclick="applyCompress('medium')">⚡ Compressed</button>
+        <label style="color:var(--muted);font-size:0.8rem;display:flex;align-items:center;gap:8px;margin:4px 0">
+          <input type="checkbox" id="pdfaCheck" onclick="event.stopPropagation()"> PDF/A compliant (basic)
+        </label>
+        <label style="color:var(--muted);font-size:0.8rem;display:flex;align-items:center;gap:8px;margin:4px 0">
+          <span>🔒 Password:</span>
+          <input type="password" id="outputPassword" placeholder="Optional" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:4px 8px;font-size:0.8rem" onclick="event.stopPropagation()">
+        </label>
         <button class="btn btn-sm" onclick="cancelCompress()">✕ Cancel</button>
       </div>
     </div>
@@ -450,7 +459,15 @@ async function loadOriginalPDF(file) {
       }
     } else {
       hideProgress();
-      const retry = confirm('Failed to open PDF. The file may be corrupted or in an unsupported format.\n\nTry a different file?');
+      let msg = 'Failed to open PDF. ';
+      if (e.name === 'InvalidPDFException' || e.name === 'FormatError') {
+        msg += 'The file appears to be corrupted or is not a valid PDF.';
+      } else if (e.name === 'UnknownErrorException') {
+        msg += 'The PDF uses an unsupported or encrypted format.';
+      } else {
+        msg += e.message || 'Unknown error.';
+      }
+      const retry = confirm(msg + '\n\nTry a different file?');
       if (retry) { fileInputPdf.click(); }
       return;
     }
@@ -1027,18 +1044,30 @@ async function exportPDF() {
 
 function applyCompress(level) {
   if (!pendingExportBytes) return;
-  let bytes = pendingExportBytes;
-  
-  if (level === 'medium') {
-    // Re-save with compression (pdf-lib compresses by default, just re-save)
-    // Future: actual image re-compression logic
-  }
-  
-  previewOverlay.classList.remove('active');
-  document.getElementById('compressContent').style.display = 'none';
-  document.getElementById('previewOverlay').querySelector('.overlay-content').style.display = 'block';
-  
-  downloadFinalPDF(bytes);
+  PDFLib.PDFDocument.load(pendingExportBytes).then(async doc => {
+    // PDF/A compliance (basic)
+    if (document.getElementById('pdfaCheck')?.checked) {
+      doc.setTitle(outputFilename || 'Corrected PDF');
+      doc.setAuthor('PDF Page Corrector');
+      doc.setSubject('Corrected PDF');
+      doc.setCreationDate(new Date());
+    }
+    // Password protection
+    const pw = document.getElementById('outputPassword')?.value;
+    if (pw) {
+      doc.encrypt({ userPassword: pw, ownerPassword: pw + '-owner', permissions: { printing: 'highResolution', modifying: false }});
+    }
+    const finalBytes = await doc.save();
+    previewOverlay.classList.remove('active');
+    document.getElementById('compressContent').style.display = 'none';
+    document.getElementById('previewOverlay').querySelector('.overlay-content').style.display = 'block';
+    downloadFinalPDF(finalBytes);
+  }).catch(e => {
+    previewOverlay.classList.remove('active');
+    document.getElementById('compressContent').style.display = 'none';
+    document.getElementById('previewOverlay').querySelector('.overlay-content').style.display = 'block';
+    showToast('Export failed: ' + e.message);
+  });
 }
 
 function cancelCompress() {
@@ -1068,7 +1097,7 @@ function downloadFinalPDF(pdfBytes) {
   document.body.removeChild(a);
   
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  setTimeout(() => { generateSummary(); setTimeout(generateSummaryCSV, 1500); }, 1500);
+  setTimeout(() => generateAllSummaries(), 1500);
   showToast(`✅ PDF saved! ${replacedCount} page(s) corrected`);
   pendingExportBytes = null;
 }
@@ -1141,13 +1170,109 @@ function generateSummaryCSV() {
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = `summary-${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  a.href = url; a.download = `summary-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+function generateSummaryDOCX() {
+  const html = `<html><head><meta charset="UTF-8"></head><body>
+<h1>PDF Page Correction Summary</h1>
+<p>Original: ${originalFilename || 'Unknown'}<br>Output: ${outputFilename || 'N/A'}<br>Date: ${new Date().toLocaleString()}<br>Total: ${pages.length} pages<br>Corrected: ${pages.filter(p=>p.status==='replaced').length}</p>
+<table border="1"><tr><th>Time</th><th>Page</th><th>Action</th><th>Source</th></tr>
+${historyLog.map(h => `<tr><td>${h.time}</td><td>${h.page}</td><td>${h.action}</td><td>${h.source||''}</td></tr>`).join('')}
+</table></body></html>`;
+  const blob = new Blob([html], { type: 'application/msword' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `summary-${new Date().toISOString().slice(0,10)}.doc`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Add DOCX to the post-export report sequence
+function generateAllSummaries() {
+  generateSummary();
+  setTimeout(() => { generateSummaryCSV(); setTimeout(generateSummaryDOCX, 1500); }, 1500);
+}
+
+// ─── Project Files (.pprj) ───
+function saveProject() {
+  if (pages.length === 0) { showToast('No PDF loaded'); return; }
+  const project = {
+    version: '1.0',
+    timestamp: Date.now(),
+    originalFilename: originalFilename,
+    originalBytes: originalBytes ? arrayBufferToBase64(originalBytes) : null,
+    pages: pages.map(p => ({
+      num: p.num, status: p.status,
+      rotation: p.rotation, bookmarked: p.bookmarked, comment: p.comment,
+      replacementBytes: p.replacementBytes ? arrayBufferToBase64(p.replacementBytes) : null,
+      replacementType: p.replacementType, replacementName: p.replacementName,
+      origWidth: p.origWidth, origHeight: p.origHeight
+    })),
+    historyLog: historyLog
+  };
+  const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const name = (originalFilename || 'project').replace(/\.pdf$/i, '') + '.pprj';
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('Project saved');
+}
+
+document.getElementById('projectInput').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const project = JSON.parse(text);
+    if (!project.originalBytes) { showToast('Project file has no PDF data'); return; }
+    if (!confirm(`Load project "${project.originalFilename || 'Untitled'}"? Unsaved changes will be lost.`)) return;
+    originalBytes = base64ToArrayBuffer(project.originalBytes);
+    originalFilename = project.originalFilename;
+    pdfPassword = null;
+    showProgress('Loading project...', 10);
+    originalDoc = await pdfjsLib.getDocument({ data: originalBytes.slice(0) }).promise;
+    pages = [];
+    for (let i = 0; i < originalDoc.numPages; i++) {
+      const sp = project.pages[i];
+      const pageProxy = await originalDoc.getPage(i + 1);
+      const vp = pageProxy.getViewport({ scale: zoomLevel });
+      const cv = document.createElement('canvas');
+      cv.width = vp.width; cv.height = vp.height;
+      await pageProxy.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+      pages.push({
+        num: i + 1,
+        status: sp ? sp.status : 'ok',
+        thumbnailUrl: cv.toDataURL(),
+        replacementBytes: sp?.replacementBytes ? base64ToArrayBuffer(sp.replacementBytes) : null,
+        replacementType: sp?.replacementType || null,
+        replacementName: sp?.replacementName || null,
+        rotation: sp?.rotation || 0,
+        bookmarked: !!sp?.bookmarked,
+        comment: sp?.comment || '',
+        origWidth: sp?.origWidth || pageProxy.view[2],
+        origHeight: sp?.origHeight || pageProxy.view[3],
+      });
+    }
+    historyLog = project.historyLog || [];
+    selectedIdx = -1;
+    selectedIndices = new Set();
+    undoStack = []; redoStack = [];
+    hideProgress();
+    document.getElementById('jumpPageInput').max = pages.length;
+    renderGrid();
+    updateToolbar();
+    showToast(`Project loaded — ${pages.length} pages`);
+  } catch (err) {
+    hideProgress();
+    showToast('Failed to load project: ' + err.message);
+  }
+  e.target.value = '';
+});
 
 // ─── Render ───
 function renderGrid() {
