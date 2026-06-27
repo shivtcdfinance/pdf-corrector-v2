@@ -322,7 +322,12 @@ function setupDragDrop(zone, fileInput, onFile) {
 setupDragDrop(uploadZonePdf, fileInputPdf, loadOriginalPDF);
 
 async function loadOriginalPDF(file) {
-  if (!file || file.type !== 'application/pdf') { showToast('Please select a PDF file'); return; }
+  if (!file) { showToast('No file selected'); return; }
+  // iOS Safari may not populate file.type — validate by extension
+  const name = (file.name || '').toLowerCase();
+  if (!name.endsWith('.pdf') && file.type && file.type !== 'application/pdf') {
+    showToast('Please select a PDF file'); return;
+  }
 
   showProgress('Loading PDF...', 0);
   const ab = await file.arrayBuffer();
