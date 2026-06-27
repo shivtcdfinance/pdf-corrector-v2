@@ -614,16 +614,20 @@ async function exportPDF() {
     const origName = document.querySelector('#uploadZonePdf input') ? 'corrected' : 'corrected';
     const fileName = `corrected-${timestamp}.pdf`;
 
-    // Download
+    // Download PDF
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = fileName;
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+    
+    // Delay cleanup to ensure download starts
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-    // Generate summary report
-    generateSummary();
+    // Generate summary report — delayed so browser doesn't block it as duplicate popup
+    setTimeout(() => generateSummary(), 1500);
 
     showToast(`✅ PDF saved! ${replacedCount} page(s) corrected`);
   } catch (e) {
