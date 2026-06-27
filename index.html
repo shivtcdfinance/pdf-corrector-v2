@@ -49,12 +49,13 @@ header p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
 .upload-zone {
   border: 2px dashed var(--border); border-radius: var(--radius);
   padding: 32px 16px; text-align: center; cursor: pointer;
-  transition: all 0.2s; background: var(--surface);
+  transition: all 0.2s; background: var(--surface); margin: 16px 0;
 }
 .upload-zone:hover, .upload-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,0.05); }
 .upload-zone .icon { font-size: 2.5rem; margin-bottom: 8px; }
 .upload-zone .primary-text { font-weight: 600; font-size: 1rem; }
 .upload-zone .sub-text { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+.upload-zone input[type="file"] { display: none; }
 
 /* Buttons */
 .btn {
@@ -187,14 +188,12 @@ footer a { color: var(--accent); text-decoration: none; }
   </header>
 
   <!-- Upload Zone -->
-  <label for="fileInputPdf" style="display:block; margin: 16px 0; cursor: pointer;">
-    <div class="upload-zone" id="uploadZonePdf">
-      <div class="icon">📁</div>
-      <div class="primary-text">Tap to select a PDF to correct</div>
-      <div class="sub-text">or drag &amp; drop • up to 100 MB</div>
-    </div>
-  </label>
-  <input type="file" id="fileInputPdf" accept="application/pdf" style="display:none">
+  <div class="upload-zone" id="uploadZonePdf">
+    <div class="icon">📁</div>
+    <div class="primary-text">Tap to select a PDF to correct</div>
+    <div class="sub-text">or drag &amp; drop • up to 100 MB</div>
+    <input type="file" id="fileInputPdf" accept="application/pdf">
+  </div>
 
   <!-- Replace drop zone (shown when page is selected) -->
   <div class="replace-drop-zone" id="replaceZone">
@@ -202,8 +201,8 @@ footer a { color: var(--accent); text-decoration: none; }
     <div class="primary-text">Drop replacement here — or tap to choose</div>
     <div class="sub-text">Image (JPG/PNG) or PDF page • Camera also supported</div>
     <div class="btn-row" style="margin-top:10px; display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
-      <button class="btn btn-primary btn-sm" onclick="document.getElementById('fileReplace').click()">📷 Choose File</button>
-      <button class="btn btn-sm" onclick="openReplaceCamera()">📸 Camera</button>
+      <button class="btn btn-primary btn-sm" onclick="event.stopPropagation();document.getElementById('fileReplace').click()">📷 Choose File</button>
+      <button class="btn btn-sm" onclick="event.stopPropagation();openReplaceCamera()">📸 Camera</button>
     </div>
     <input type="file" id="fileReplace" accept="image/*,application/pdf" style="display:none">
   </div>
@@ -512,6 +511,25 @@ async function showPreview() {
   previewReplacement.width = rvp.width;
   previewReplacement.height = rvp.height;
   await repPage.render({ canvasContext: previewReplacement.getContext('2d'), viewport: rvp }).promise;
+
+  // Dimension mismatch check (per FRS §10)
+  const origW = p.origWidth || vp.width;
+  const origH = p.origHeight || vp.height;
+  const repW = repPage.view[2];
+  const repH = repPage.view[3];
+  const origRatio = origW / origH;
+  const repRatio = repW / repH;
+  const ratioDiff = Math.abs(origRatio - repRatio) / origRatio;
+
+  if (ratioDiff > 0.15) {
+    const warning = document.getElementById('dimensionWarning');
+    if (warning) warning.remove();
+    const warn = document.createElement('div');
+    warn.id = 'dimensionWarning';
+    warn.style.cssText = 'background:rgba(210,153,34,0.15);border:1px solid var(--warning);border-radius:8px;padding:10px 14px;margin:12px 0;font-size:0.8rem;color:var(--warning);text-align:center;';
+    warn.textContent = `⚠ Size mismatch: replacement aspect ratio (${repRatio.toFixed(2)}) differs from original (${origRatio.toFixed(2)}). Preview before confirming.`;
+    document.querySelector('.preview-actions').before(warn);
+  }
 }
 
 function confirmReplace() {
@@ -623,10 +641,12 @@ async function exportPDF() {
 
     hideProgress();
 
-    // Generate filename
+    // Generate filename — prompt user for rename
     const timestamp = new Date().toISOString().slice(0,10);
-    const origName = document.querySelector('#uploadZonePdf input') ? 'corrected' : 'corrected';
-    const fileName = `corrected-${timestamp}.pdf`;
+    const defaultName = `corrected-${timestamp}.pdf`;
+    const userInput = prompt('Save corrected PDF as:', defaultName);
+    const fileName = (userInput && userInput.trim()) ? userInput.trim() : defaultName;
+    if (!fileName.toLowerCase().endsWith('.pdf')) fileName += '.pdf';
 
     // Download PDF
     const url = URL.createObjectURL(blob);
@@ -764,19 +784,90 @@ function saveState() {
       historyLog: historyLog.slice(-50),
       timestamp: Date.now(),
     };
-    // Store replacements separately (too large for localStorage)
     const replacements = {};
     pages.forEach((p, i) => {
       if (p.status === 'replaced' && p.replacementBytes) {
-        // Store as base64
         replacements[i] = arrayBufferToBase64(p.replacementBytes);
       }
     });
     localStorage.setItem('pdf-corrector-state', JSON.stringify(state));
     localStorage.setItem('pdf-corrector-replacements', JSON.stringify(replacements));
+    // Also save original PDF bytes (for resume)
+    if (originalBytes) {
+      localStorage.setItem('pdf-corrector-original', arrayBufferToBase64(originalBytes));
+    }
+  } catch (e) { /* localStorage might be full */ }
+}
+
+function loadState() {
+  try {
+    const stateStr = localStorage.getItem('pdf-corrector-state');
+    if (!stateStr) return false;
+    const state = JSON.parse(stateStr);
+    // Only resume if saved within last 24h
+    if (Date.now() - state.timestamp > 86400000) return false;
+    return true;
+  } catch (e) { return false; }
+}
+
+async function resumeSession() {
+  try {
+    const stateStr = localStorage.getItem('pdf-corrector-state');
+    const state = JSON.parse(stateStr);
+    const origBase64 = localStorage.getItem('pdf-corrector-original');
+    if (!origBase64) return;
+    
+    originalBytes = base64ToArrayBuffer(origBase64);
+    showProgress('Resuming session...', 10);
+    
+    originalDoc = await pdfjsLib.getDocument({ data: originalBytes.slice(0) }).promise;
+    const total = originalDoc.numPages;
+    const repStr = localStorage.getItem('pdf-corrector-replacements');
+    const replacements = repStr ? JSON.parse(repStr) : {};
+    
+    // Rebuild pages array
+    for (let i = 0; i < total; i++) {
+      const saved = state.pages[i];
+      const pageProxy = await originalDoc.getPage(i + 1);
+      const viewport = pageProxy.getViewport({ scale: 0.3 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await pageProxy.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      
+      pages.push({
+        num: i + 1,
+        status: saved ? saved.status : 'ok',
+        thumbnailUrl: canvas.toDataURL(),
+        replacementBytes: replacements[i] ? base64ToArrayBuffer(replacements[i]) : null,
+        replacementType: saved ? saved.replacementType : null,
+        replacementName: saved ? saved.replacementName : null,
+        origWidth: pageProxy.view[2],
+        origHeight: pageProxy.view[3],
+      });
+      progressBar.style.width = ((i + 1) / total * 50 + 10) + '%';
+    }
+    
+    historyLog = state.historyLog || [];
+    hideProgress();
+    renderGrid();
+    updateToolbar();
+    showToast(`Session restored — ${total} pages, ${pages.filter(p=>p.status==='replaced').length} replaced`);
   } catch (e) {
-    // localStorage might be full — non-critical
+    hideProgress();
+    console.error('Resume failed:', e);
+    // Clear corrupted state
+    localStorage.removeItem('pdf-corrector-state');
+    localStorage.removeItem('pdf-corrector-replacements');
+    localStorage.removeItem('pdf-corrector-original');
   }
+}
+
+function base64ToArrayBuffer(base64) {
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes.buffer;
 }
 
 function arrayBufferToBase64(buffer) {
@@ -812,14 +903,48 @@ function showToast(message) {
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveState(); showToast('Saved'); }
+  if (e.key === 'Delete' && selectedIdx >= 0 && pages[selectedIdx].status === 'replaced') {
+    e.preventDefault(); deleteReplacement();
+  }
   if (e.key === 'Escape') {
     previewOverlay.classList.remove('active');
     pendingReplacement = null;
   }
 });
 
-// ─── Initial render ───
-renderGrid();
+function deleteReplacement() {
+  if (selectedIdx < 0 || pages[selectedIdx].status !== 'replaced') return;
+  const p = pages[selectedIdx];
+  pushUndo(selectedIdx, 'replaced', 'ok', p.replacementBytes, p.replacementType, p.replacementName);
+  p.status = 'ok';
+  p.replacementBytes = null;
+  p.replacementType = null;
+  p.replacementName = null;
+  addHistory(selectedIdx, 'Deleted replacement', p.replacementName);
+  renderGrid();
+  updateToolbar();
+  saveState();
+  showToast('Replacement removed');
+}
+
+// ─── Autosave timer (every 30s per FRS) ───
+setInterval(() => {
+  if (pages.length > 0) saveState();
+}, 30000);
+
+// ─── Resume on load ───
+(async () => {
+  if (loadState()) {
+    const shouldResume = confirm('Found a saved session. Resume where you left off?');
+    if (shouldResume) { await resumeSession(); return; }
+    // Clear if user declines
+    localStorage.removeItem('pdf-corrector-state');
+    localStorage.removeItem('pdf-corrector-replacements');
+    localStorage.removeItem('pdf-corrector-original');
+  }
+  renderGrid();
+})();
 </script>
 
 </body>
